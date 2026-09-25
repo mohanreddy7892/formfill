@@ -1,63 +1,59 @@
-"""Exercise every transport the way real clients do.
-
-Needs: FormFill at FORMFILL_URL with the leave form uploaded, and
-  formfill-mcp serve --transport http --port 8766 --token s3cret --public-url http://127.0.0.1:8766
-  formfill-mcp serve --transport sse  --port 8767 --token s3cret
+"""Manual transport integration: run backend plus HTTP(8766)/SSE(8767) with test token s3cret.
+Each scenario uploads a fictional demo, receives PDF bytes directly, then clears its session.
 """
-import asyncio, json, os, sys, tempfile
-import httpx
-
+import asyncio
+import base64
+import json
+import os
+import sys
+from pathlib import Path
 try:
-    import httpx2 as _hx          # MCP SDK 2.x ships its own httpx fork
+    import httpx2 as hx
 except ImportError:
-    _hx = httpx
+    import httpx as hx
 from mcp import Client, StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 from mcp.client.sse import sse_client
 
-FF = os.environ.get("FORMFILL_URL", "http://127.0.0.1:8000")
-TOKEN = "s3cret"
-LEAVE = {"emp_name": "Arjun Nair", "emp_id": "10078901", "type_sick": True, "from_date": "05-10-2026",
-         "to_date": "07-10-2026", "days": "3", "reason": "Fever"}
+TOKEN='s3cret'
+PDF=Path(__file__).resolve().parents[2]/'demo/forms/2_fillable_leave_application.pdf'
 
 
-def data(r):
-    sc = r.structured_content
-    if sc is not None:
-        return sc.get("result", sc) if isinstance(sc, dict) else sc
-    return json.loads(r.content[0].text)
+def data(result):
+    assert not result.is_error
+    structured=result.structured_content
+    if structured is not None:
+        return structured.get('result',structured) if isinstance(structured,dict) else structured
+    return json.loads(result.content[0].text)
 
 
-async def scenario(label, client, expect):
+async def scenario(label,client):
     async with client as c:
-        tools = sorted(t.name for t in (await c.list_tools()).tools)
-        forms = data(await c.call_tool("list_forms", {}))
-        leave = next(f for f in forms if "leave" in f["name"])
-        res = await c.call_tool("fill_form", {"form_id": leave["form_id"], "values": LEAVE})
-        text = res.content[0].text
-        ok = expect in text
-        print(f"{label:<22} tools={len(tools)}  forms={len(forms)}  fill={'OK' if ok else 'FAIL'}  -> {text.splitlines()[1][:70]}")
-        return text
+        uploaded=data(await c.call_tool('upload_form',{'pdf_base64':base64.b64encode(PDF.read_bytes()).decode()}))
+        result=await c.call_tool('fill_form',{'form_id':uploaded['form_id'],'values':{'emp_name':'TEST PERSON'}})
+        assert not result.is_error
+        docs=[item.resource for item in result.content if item.type=='resource']
+        assert len(docs)==1 and base64.b64decode(docs[0].blob).startswith(b'%PDF-')
+        data(await c.call_tool('clear_session',{}))
+        assert data(await c.call_tool('list_forms',{}))==[]
+        print(f'{label}: PDF returned directly; session cleared')
 
 
 async def main():
-    tmp = tempfile.mkdtemp()
-    stdio = StdioServerParameters(command="formfill-mcp", args=[], env={**os.environ, "FORMFILL_URL": FF, "FORMFILL_OUTPUT_DIR": tmp})
-    await scenario("stdio (Claude Desktop)", Client(stdio), "Saved to:")
-
-    http = _hx.AsyncClient(headers={"Authorization": f"Bearer {TOKEN}"}, timeout=60)
-    text = await scenario("streamable HTTP", Client(streamable_http_client("http://127.0.0.1:8766/mcp", http_client=http)), "Download")
-    link = text.split("): ")[1].splitlines()[0]
-    r = httpx.get(link); print(f"{'download link':<22} status={r.status_code} pdf={r.content[:5] == b'%PDF-'} bytes={len(r.content)}")
-
-    await scenario("SSE (older clients)", Client(sse_client("http://127.0.0.1:8767/sse", headers={"Authorization": f"Bearer {TOKEN}"})), "Download")
-
+    params=StdioServerParameters(command=sys.executable,args=['-m','formfill_mcp'],env=dict(os.environ))
+    await scenario('stdio',Client(params))
+    async with hx.AsyncClient(headers={'Authorization':f'Bearer {TOKEN}'},timeout=60) as http:
+        await scenario('HTTP',Client(streamable_http_client('http://127.0.0.1:8766/mcp',http_client=http)))
+    await scenario('SSE',Client(sse_client('http://127.0.0.1:8767/sse',headers={'Authorization':f'Bearer {TOKEN}'})))
+    rejected=False
     try:
-        bad = _hx.AsyncClient(headers={"Authorization": "Bearer wrong"}, timeout=10)
-        async with Client(streamable_http_client("http://127.0.0.1:8766/mcp", http_client=bad)) as c:
-            await c.list_tools()
-        print("wrong token            FAIL (accepted)")
+        async with hx.AsyncClient(headers={'Authorization':'Bearer wrong'},timeout=10) as bad:
+            async with Client(streamable_http_client('http://127.0.0.1:8766/mcp',http_client=bad)) as c:
+                await c.list_tools()
     except Exception:
-        print("wrong token            rejected OK")
+        rejected=True
+    assert rejected, 'wrong bearer token was accepted'
+    print('wrong token: rejected')
 
-asyncio.run(main())
+if __name__=='__main__':
+    asyncio.run(main())

@@ -6,7 +6,7 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 const notInDemo = (what) => json({ detail: `${what} needs the installed FormFill server, so it's off in this demo. Everything else works.` }, 501);
 
 export function installDemo(data) {
-  const forms = data.forms;
+  let forms = structuredClone(data.forms);
   const pngs = {};
   window.__FORMFILL_DEMO__ = {
     sampleFiles: () => data.samples.map((s) => new File([b64ToBytes(s.data)], s.name, { type: s.type })),
@@ -22,6 +22,7 @@ export function installDemo(data) {
     const body = () => JSON.parse(init.body || "{}");
     await new Promise((r) => setTimeout(r, 120));                     // feel like a network call
     let m;
+    if (p === "/session/clear" && method === "POST") { forms = structuredClone(data.forms); return json({cleared: true}); }
     if (p === "/health") return json({ ok: true });
     if (p === "/templates") return json(Object.entries(forms).map(([id, f]) => ({ form_id: id, name: f.template.name, pages: f.template.pages.length, fields: f.template.fields.length })));
     if (p === "/features") return json({ ocr: true, engine: "rules", categories: data.categories });

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from typing import Any
 
 import httpx
@@ -16,10 +17,11 @@ class FormFillAPI:
         self.base_url = (base_url or os.environ.get("FORMFILL_URL", "http://localhost:8000")).rstrip("/")
         self.token = token if token is not None else os.environ.get("FORMFILL_TOKEN")
         self.timeout = timeout
-        self._templates: dict[str, dict] = {}
+        self.session = secrets.token_hex(16)
 
     def _client(self) -> httpx.Client:
         headers = {"X-FormFill-Token": self.token} if self.token else {}
+        headers["X-FormFill-Session"] = self.session
         return httpx.Client(base_url=self.base_url, headers=headers, timeout=self.timeout)
 
     def _req(self, method: str, path: str, **kw) -> httpx.Response:
@@ -47,9 +49,12 @@ class FormFillAPI:
         return self._req("GET", "/api/templates").json()
 
     def template(self, form_id: str, refresh: bool = False) -> dict:
-        if refresh or form_id not in self._templates:
-            self._templates[form_id] = self._req("GET", f"/api/forms/{form_id}/template").json()
-        return self._templates[form_id]
+        return self._req("GET", f"/api/forms/{form_id}/template").json()
+
+    def clear_session(self):
+        result = self._req("POST", "/api/session/clear").json()
+        self.session = secrets.token_hex(16)
+        return result
 
     def check(self, form_id: str, values: dict) -> dict:
         """Server-side auto-calculated values and cross-field checks (older FormFill servers: empty)."""

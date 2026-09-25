@@ -100,10 +100,10 @@ def test_invalid_stored_layout_gives_clear_error(client):
     import json
     from app import storage
     fid = upload(client, "3_line_style_travel_claim.pdf")["form_id"]
-    p = storage.DATA / "templates" / f"{fid}.json"
-    data = json.loads(p.read_text())
+    session = client.headers["X-FormFill-Session"]
+    data = json.loads(storage._sessions[session]["templates"][fid])
     data["fields"] = [{"id": "x", "page": 7, "type": "text", "rect": [1, 1, 50, 10]}]
-    p.write_text(json.dumps(data))                         # simulate a layout saved before validation existed
+    storage._sessions[session]["templates"][fid] = json.dumps(data)                         # simulate a layout saved before validation existed
     r = client.post(f"/api/forms/{fid}/fill", json={"values": {"x": "a"}})
     assert r.status_code == 409 and "Edit fields" in r.json()["detail"]
 

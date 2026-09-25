@@ -21,7 +21,7 @@ export default function Library({ go }) {
   }
 
   async function remove(t) {
-    if (!window.confirm(`Delete "${t.name}" and its field layout for everyone?`)) return;
+    if (!window.confirm(`Delete "${t.name}" and its field layout from this session?`)) return;
     await api.remove(t.form_id).catch((e) => setError(e.message));
     load();
   }
@@ -30,7 +30,7 @@ export default function Library({ go }) {
     <section className="library">
       <div className="library-intro">
         <h1>Fill any PDF form without printing it.</h1>
-        <p>Upload a blank form once and map its boxes. After that, anyone on the team can type their details and download a neatly filled copy.</p>
+        <p>Upload a form for this temporary session, fill it, and explicitly download the result. Forms and layouts expire after 15 minutes; use Clear session when finished.</p>
       </div>
 
       <label
@@ -39,13 +39,13 @@ export default function Library({ go }) {
         onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files[0]); }}
       >
-        <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => upload(e.target.files[0])} />
+        <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const file = e.target.files[0]; e.target.value = ""; upload(file); }} />
         <span className="dropzone-title">{busy ? "Reading the form…" : "Drop a blank PDF form here"}</span>
         <span className="dropzone-sub">or <u>choose a file</u> · up to 20 MB</span>
       </label>
       {error && <p className="error" role="alert">{error}</p>}
 
-      <h2 className="section-title">Forms on this server</h2>
+      <h2 className="section-title">Forms in this temporary session</h2>
       {items === null ? <p className="muted">Loading…</p> : items.length === 0 ? (
         <p className="muted">No forms yet. Upload the first one above.</p>
       ) : (

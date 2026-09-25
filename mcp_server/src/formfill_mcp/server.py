@@ -6,7 +6,6 @@ import functools
 import os
 import re
 import secrets
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -38,19 +37,12 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 
 class Settings:
     """Runtime settings; the CLI adjusts these before serving."""
-    mode: str = "local"                   # "local" = save files to disk, "remote" = serve download links
-    output_dir: Path = Path(os.environ.get("FORMFILL_OUTPUT_DIR", Path.home() / "FormFill" / "filled")).expanduser()
-    public_url: str = os.environ.get("FORMFILL_MCP_PUBLIC_URL", "").rstrip("/")
-    link_ttl: int = int(os.environ.get("FORMFILL_MCP_LINK_TTL", "900"))
+    mode: str = "local"                   # remote mode disallows filesystem inputs
 
 
 settings = Settings()
 api = FormFillAPI()
 mcp = _Server("FormFill", instructions=INSTRUCTIONS)
-
-# Filled PDFs for remote mode: token -> (expires_at, filename, bytes). Memory only.
-DOWNLOADS: dict[str, tuple[float, str, bytes]] = {}
-
 
 def _guard(fn):
     """Turn FormFill errors into ToolErrors so the reason reaches the model."""
@@ -94,7 +86,7 @@ def _problems(tpl: dict, values: dict) -> tuple[list[str], list[str]]:
         if _is_empty(v):
             continue
         if f["type"] == "boxes" and len(str(v)) > len(f["boxes"]):
-            errors.append(f"{key}: '{v}' has {len(str(v))} characters but the form has {len(f['boxes'])} boxes")
+            errors.append(f"{key}: value is too long for the field")
         if f["type"] == "choice":
             allowed = {o["value"].upper() for o in f["options"]}
             items = v if isinstance(v, list) else [v]
@@ -175,8 +167,8 @@ def fill_form(form_id: str, values: dict[str, Any], file_name: str | None = None
               include_pdf: bool = False) -> list:
     """Fill the form and deliver the PDF. Call only after the user confirmed the values.
 
-    Local use saves the PDF to the user's FormFill folder; remote use returns a short-lived download link.
-    Set include_pdf=true to also attach the PDF itself (for clients that can display files).
+    All transports return the PDF directly. No server file or retained download link is created.
+    The PDF is always attached; include_pdf is retained only for argument compatibility.
     """
     tpl = api.template(form_id)
     errors, unknown = _problems(tpl, values)
@@ -194,27 +186,15 @@ def fill_form(form_id: str, values: dict[str, Any], file_name: str | None = None
     stem = re.sub(r"[^\w-]+", "_", file_name or f"{tpl['name']}_filled").strip("_")
     name = f"{stem}_{datetime.now():%Y%m%d_%H%M%S}.pdf"
 
-    if settings.mode == "remote":
-        _purge()
-        token = secrets.token_urlsafe(24)
-        DOWNLOADS[token] = (time.time() + settings.link_ttl, name, pdf)
-        where = (f"Download (valid {settings.link_ttl // 60} min): {settings.public_url}/files/{token}"
-                 if settings.public_url else f"Download path on the MCP server: /files/{token}")
-    else:
-        settings.output_dir.mkdir(parents=True, exist_ok=True)
-        path = settings.output_dir / name
-        path.write_bytes(pdf)
-        where = f"Saved to: {path}"
-
+    where = "PDF attached to this response. No server file or download cache was created."
     auto = server.get("computed", {})
     note = f" (+{len(auto)} calculated automatically)" if auto else ""
     warn = ("\nPlease review with the user:\n- " + "\n- ".join(warnings)) if warnings else ""
     out: list = [TextContent(type="text", text=(
         f"Filled {len(clean)} of {len(tpl['fields'])} fields on '{tpl['name']}'{note}.\n{where}{warn}\n"
         "Ask the user to review the PDF and sign or get stamps where the form needs them."))]
-    if include_pdf:
-        out.append(EmbeddedResource(type="resource", resource=BlobResourceContents(
-            uri=f"formfill://filled/{name}", mimeType="application/pdf", blob=base64.b64encode(pdf).decode())))
+    out.append(EmbeddedResource(type="resource", resource=BlobResourceContents(
+        uri=f"formfill://filled/{name}", mimeType="application/pdf", blob=base64.b64encode(pdf).decode())))
     return out
 
 
@@ -232,7 +212,7 @@ def upload_form(pdf_path: str | None = None, pdf_base64: str | None = None, file
     """Add a blank PDF form. Give `pdf_path` (a file on the machine running this server) or `pdf_base64`.
 
     Known forms get their fields automatically and fillable PDFs import their own fields; other forms must
-    be mapped once in the FormFill web app (edit_url) before they can be filled.
+    be uploaded separately in the web app to map and fill within that temporary browser session.
     """
     if pdf_path:
         p = Path(pdf_path).expanduser()
@@ -248,9 +228,8 @@ def upload_form(pdf_path: str | None = None, pdf_base64: str | None = None, file
     if not data.startswith(b"%PDF-"):
         raise ToolError("That file is not a PDF.")
     r = api.upload(file_name, data)
-    r["edit_url"] = f"{api.base_url}/#/design/{r['form_id']}"
     if not r["fields"]:
-        r["next"] = f"No fields yet. Map them once in the web app: {r['edit_url']}"
+        r["next"] = "No mapped fields. Upload this PDF separately in the web app to map and fill it there; browser and MCP sessions are intentionally separate."
     return r
 
 
@@ -323,10 +302,11 @@ def scan_documents(form_id: str | None = None, paths: list[str] | None = None,
     return out
 
 
-def _purge():
-    now = time.time()
-    for t in [t for t, (exp, _, _) in DOWNLOADS.items() if exp < now]:
-        DOWNLOADS.pop(t, None)
+@mcp.tool(title="Clear temporary session", annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+@_guard
+def clear_session() -> dict:
+    """Discard uploaded forms and layouts from this MCP process's temporary session."""
+    return api.clear_session()
 
 
 # ------------------------------------------------------------------ resources (for clients that browse them)

@@ -40,6 +40,9 @@ async def _call(name: str, arguments: dict[str, Any]):
             parts.append(item.text)
     if r.is_error:
         raise RuntimeError("\n".join(parts))
+    resources = [item.model_dump(mode="json", by_alias=True) for item in r.content if getattr(item, "type", "") == "resource"]
+    if resources:
+        return {"message": "\n".join(parts), "resources": resources}
     sc = getattr(r, "structured_content", None)
     if sc is not None:
         return sc.get("result", sc) if isinstance(sc, dict) and set(sc) == {"result"} else sc

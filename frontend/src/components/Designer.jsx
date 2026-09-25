@@ -99,7 +99,7 @@ export default function Designer({ formId, go }) {
   }, [activeId, update]);
 
   async function save() {
-    try { const r = await api.saveTemplate(formId, tpl); setTpl((t) => ({ ...t, version: r.version })); setDirty(false); setStatus(window.__FORMFILL_DEMO__ ? "Saved (demo: until you reload)" : "Saved for everyone"); }
+    try { const r = await api.saveTemplate(formId, tpl); setTpl((t) => ({ ...t, version: r.version })); setDirty(false); setStatus(window.__FORMFILL_DEMO__ ? "Saved (demo: until you reload)" : "Kept in this temporary session only"); }
     catch (e) { setStatus(e.message); }
   }
 

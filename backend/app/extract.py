@@ -123,19 +123,8 @@ _engine_error: str | None = None
 
 
 def engine() -> TypeLLMEngine | None:
-    global _engine, _engine_error
-    url = os.environ.get("TYPELLM_URL")
-    if not url:
-        return None
-    if _engine is None and _engine_error is None:
-        try:
-            _engine = TypeLLMEngine(url, os.environ.get("TYPELLM_MODEL") or None,
-                                    vision=os.environ.get("TYPELLM_VISION", "1") != "0",
-                                    timeout=float(os.environ.get("TYPELLM_TIMEOUT", "60")))
-        except Exception as e:                          # not installed / bad config: stay on rules
-            _engine_error = f"{type(e).__name__}: {e}"
-            log.warning("TypeLLM disabled: %s", _engine_error)
-    return _engine
+    # Strict privacy mode: never send document content to an external/model service.
+    return None
 
 
 def engine_status() -> dict:
@@ -154,5 +143,5 @@ def extract(text: str, filename: str, data: bytes, eng: TypeLLMEngine | None = N
     try:
         return merge(_clean_llm(eng.ask(text, filename, data)), base)
     except Exception as e:                              # server down, timeout, schema/decoding error
-        log.warning("TypeLLM failed for %s, using rules: %s", filename, e)
+        log.warning("Document AI unavailable; using offline rules")
         return {**base, "engine": "rules", "engine_note": "AI engine unavailable, used rule-based reading"}

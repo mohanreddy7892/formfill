@@ -96,7 +96,7 @@ def fill(pdf_path: str, tpl: Template, values: dict) -> bytes:
     errors = validate(tpl, values)
     if errors:
         raise FillError("; ".join(errors))
-    reader = PdfReader(pdf_path)
+    reader = PdfReader(io.BytesIO(pdf_path) if isinstance(pdf_path, bytes) else pdf_path)
     writer = PdfWriter()
     writer.append(reader)
 

@@ -6,6 +6,7 @@
 * AcroForm fields: read straight from the PDF when the form is already fillable.
 """
 import hashlib
+import io
 import re
 from collections import defaultdict
 
@@ -20,7 +21,7 @@ GAP_MAX = 4.0                    # max horizontal gap between boxes in one run
 def fingerprint(path: str) -> str:
     """Stable identity of a form layout: page geometry + printed text (not file bytes)."""
     h = hashlib.sha256()
-    with pdfplumber.open(path) as pdf:
+    with pdfplumber.open(io.BytesIO(path) if isinstance(path, bytes) else path) as pdf:
         for p in pdf.pages:
             h.update(f"{round(p.width)}x{round(p.height)}|".encode())
             text = re.sub(r"\s+", " ", p.extract_text() or "").strip().upper()
@@ -102,14 +103,14 @@ def _nearest_label(words, x0, top):
 
 def detect(path: str):
     pages = []
-    with pdfplumber.open(path) as pdf:
+    with pdfplumber.open(io.BytesIO(path) if isinstance(path, bytes) else path) as pdf:
         for p in pdf.pages:
             pages.append({"width": float(p.width), "height": float(p.height), "runs": detect_page(p)})
     return {"pages": pages, "acro": acro_fields(path)}
 
 
 def acro_fields(path: str):
-    reader = PdfReader(path)
+    reader = PdfReader(io.BytesIO(path) if isinstance(path, bytes) else path)
     out = []
     for pi, page in enumerate(reader.pages):
         height = float(page.mediabox.height)

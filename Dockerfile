@@ -14,14 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr t
 WORKDIR /app
 COPY backend/requirements.txt backend/requirements-typellm.txt backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
-# Optional AI reading (docs/TYPELLM.md): docker compose build --build-arg WITH_TYPELLM=1
-ARG WITH_TYPELLM=0
-RUN if [ "$WITH_TYPELLM" = "1" ]; then apt-get update && apt-get install -y --no-install-recommends git \
-      && pip install --no-cache-dir -r backend/requirements-typellm.txt && rm -rf /var/lib/apt/lists/*; fi
 COPY backend/ backend/
 COPY --from=web /web/dist frontend/dist
-ENV FORMFILL_DATA=/data
-VOLUME ["/data"]
+ENV PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8000
 WORKDIR /app/backend
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --no-access-log --proxy-headers --forwarded-allow-ips=*"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hmac
+import logging
 import os
 import sys
 import time
@@ -11,6 +12,7 @@ from . import __version__
 
 
 def _serve(args):
+    logging.disable(logging.CRITICAL)
     from . import server as srv
 
     if args.transport == "stdio":
@@ -22,23 +24,11 @@ def _serve(args):
     from starlette.responses import JSONResponse, Response
 
     srv.settings.mode = "remote"
-    if args.public_url:
-        srv.settings.public_url = args.public_url.rstrip("/")
     token = args.token or os.environ.get("FORMFILL_MCP_TOKEN", "")
 
     @srv.mcp.custom_route("/health", methods=["GET"])
     async def health(_):
         return JSONResponse({"ok": True, "version": __version__})
-
-    @srv.mcp.custom_route("/files/{token}", methods=["GET"])
-    async def download(request):
-        srv._purge()
-        item = srv.DOWNLOADS.get(request.path_params["token"])
-        if not item:
-            return JSONResponse({"error": "Link expired or not found"}, status_code=404)
-        _, name, pdf = item
-        return Response(pdf, media_type="application/pdf", headers={
-            "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
     if args.transport == "sse":
         app = srv.mcp.sse_app()
@@ -57,14 +47,14 @@ def _serve(args):
     path = "/sse" if args.transport == "sse" else "/mcp"
     print(f"FormFill MCP ({args.transport}) on http://{args.host}:{args.port}{path}  -> FormFill {srv.api.base_url}",
           file=sys.stderr)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="critical", access_log=False)
 
 
 class BearerAuth:
-    """ASGI middleware: MCP endpoints need `Authorization: Bearer <token>`; /health and /files/* stay open
-    (download links are unguessable and expire)."""
+    """ASGI middleware: MCP endpoints need `Authorization: Bearer <token>`; /health stays open
+    (documents are returned directly; there are no download links)."""
 
-    OPEN = ("/health", "/files/")
+    OPEN = ("/health",)
 
     def __init__(self, app, token: str):
         self.app, self.token = app, token.encode()
@@ -105,7 +95,7 @@ def _doctor(args):
         api.health()
         forms = api.forms()
         print(f"OK  FormFill reachable at {api.base_url} ({(time.time() - t) * 1000:.0f} ms)")
-        print(f"OK  {len(forms)} form(s): " + ", ".join(f"{f['name']} [{f['fields']} fields]" for f in forms[:6]))
+        print(f"OK  {len(forms)} temporary form(s)")
         if not any(f["fields"] for f in forms):
             print("!!  No form has fields yet - upload or map one in the FormFill web app.")
     except FormFillError as e:

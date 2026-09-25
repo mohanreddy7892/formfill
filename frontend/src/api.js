@@ -1,14 +1,24 @@
-const tokenKey = "formfill_token";
+let token = null;
+let session = crypto.randomUUID().replaceAll("-", "");
+const pending = new Set();
 
 async function call(path, opts = {}) {
+  const requestSession = session;
   const headers = { ...(opts.headers || {}) };
-  let token = null;
-  try { token = sessionStorage.getItem(tokenKey); } catch { /* storage unavailable */ }
   if (token) headers["X-FormFill-Token"] = token;
-  const res = await fetch(`/api${path}`, { ...opts, headers });
+  headers["X-FormFill-Session"] = session;
+  const controller = new AbortController();
+  pending.add(controller);
+  let res;
+  try {
+    const response = await fetch(`/api${path}`, { ...opts, headers, cache: "no-store", signal: controller.signal });
+    const body = await response.arrayBuffer();
+    if (requestSession !== session) throw new DOMException("Session cleared", "AbortError");
+    res = new Response(body, {status: response.status, statusText: response.statusText, headers: response.headers});
+  } finally { pending.delete(controller); }
   if (res.status === 401) {
     const t = window.prompt("This FormFill server needs an access token. Ask your admin for it.");
-    if (t) { try { sessionStorage.setItem(tokenKey, t); } catch { /* storage unavailable */ } return call(path, opts); }
+    if (t) { token = t; return call(path, opts); }
   }
   if (!res.ok) {
     let detail = res.statusText;
@@ -66,3 +76,20 @@ function pageImage(id, page) {
   }
   return imageCache.get(key);
 }
+
+export async function clearSession() {
+  for (const controller of pending) controller.abort();
+  pending.clear();
+  for (const promise of imageCache.values()) promise.then(URL.revokeObjectURL).catch(() => {});
+  imageCache.clear();
+  const headers = {"X-FormFill-Session": session};
+  if (token) headers["X-FormFill-Token"] = token;
+  session = crypto.randomUUID().replaceAll("-", "");
+  token = null;
+  try {
+    const r = await fetch('/api/session/clear', {method:'POST', headers, cache:'no-store', keepalive:true});
+    return r.ok;
+  } catch { return false; }
+}
+window.addEventListener('pagehide', () => { void clearSession(); });
+window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });

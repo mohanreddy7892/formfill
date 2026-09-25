@@ -8,3 +8,10 @@ __pycache__/
 *_filled.pdf
 *_values.json
 .env
+
+# Runtime/private material must never be committed.
+uploads/
+filled/
+private/
+*.log
+*.core

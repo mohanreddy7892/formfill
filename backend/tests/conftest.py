@@ -1,11 +1,10 @@
 import os
-import tempfile
+import secrets
 from pathlib import Path
 
 import pytest
 
-# Isolated storage for the whole test session (must be set before the app is imported).
-os.environ["FORMFILL_DATA"] = tempfile.mkdtemp(prefix="formfill-test-")
+# Tests use isolated in-memory session IDs.
 os.environ.pop("FORMFILL_TOKEN", None)
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -19,13 +18,13 @@ MEDI_ASSIST = os.environ.get("TEST_FORM")      # optional external fixture: blan
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(main, "APP_TOKEN", None)
-    return TestClient(main.app)
+    return TestClient(main.app, headers={"X-FormFill-Session": secrets.token_hex(16)})
 
 
 @pytest.fixture
 def token_client(monkeypatch):
     monkeypatch.setattr(main, "APP_TOKEN", "test-token")
-    return TestClient(main.app)
+    return TestClient(main.app, headers={"X-FormFill-Session": secrets.token_hex(16)})
 
 
 def upload(c, name, headers=None):

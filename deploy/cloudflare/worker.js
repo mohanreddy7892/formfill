@@ -39,6 +39,7 @@ export default {
     });
 
     const out = new Headers(upstream.headers);
+    out.set("cache-control", "no-store");
     out.set("strict-transport-security", "max-age=31536000; includeSubDomains");
     out.set("x-content-type-options", "nosniff");
     out.set("referrer-policy", "same-origin");

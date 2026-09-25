@@ -1,10 +1,8 @@
 import io
-from functools import lru_cache
 
 import pypdfium2 as pdfium
 
 
-@lru_cache(maxsize=64)
 def page_png(path: str, page_index: int, scale: float = 1.6) -> bytes:
     pdf = pdfium.PdfDocument(path)
     try:

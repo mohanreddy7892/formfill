@@ -18,6 +18,10 @@ import json
 from fastapi import Form
 
 from . import detect, extract, filler, ocr, pack, render, rules, storage, tables
+from .privacy import PrivacyMiddleware
+from contextlib import asynccontextmanager
+import threading
+import logging
 from pydantic import BaseModel as _BM
 
 from .models import FillRequest, PageInfo, Template
@@ -32,7 +36,26 @@ MAX_DOC = 15 * 1024 * 1024
 MAX_DOCS = 25
 DOC_TYPES = (b"%PDF-", b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF", b"II*\x00", b"MM\x00*")
 
-app = FastAPI(title="FormFill", version="1.0")
+@asynccontextmanager
+async def lifespan(app):
+    previous_logging_level = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    stop = threading.Event()
+    def cleanup():
+        while not stop.wait(5):
+            storage.purge()
+    worker = threading.Thread(target=cleanup, daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        worker.join(timeout=6)
+        storage.clear_all()
+        logging.disable(previous_logging_level)
+
+app = FastAPI(title="FormFill", version="1.0", lifespan=lifespan)
+app.add_middleware(PrivacyMiddleware)
 MAX_UPLOAD = 20 * 1024 * 1024
 APP_TOKEN = os.environ.get("FORMFILL_TOKEN")   # optional shared token for internal deployments
 
@@ -40,6 +63,8 @@ APP_TOKEN = os.environ.get("FORMFILL_TOKEN")   # optional shared token for inter
 def auth(x_formfill_token: str | None = Header(default=None)):
     if APP_TOKEN and x_formfill_token != APP_TOKEN:
         raise HTTPException(401, "Missing or wrong access token")
+    if not storage.SESSION.get():
+        raise HTTPException(400, "A temporary X-FormFill-Session ID is required")
 
 
 def _template(form_id: str) -> Template:
@@ -54,7 +79,7 @@ def _template(form_id: str) -> Template:
 
 def _path(form_id: str):
     try:
-        return str(storage.form_path(form_id))
+        return storage.form_path(form_id)
     except FileNotFoundError:
         raise HTTPException(404, "Form not found")
 
@@ -62,6 +87,12 @@ def _path(form_id: str):
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+@app.post("/api/session/clear", dependencies=[Depends(auth)])
+def clear_session():
+    storage.clear_session()
+    return {"cleared": True}
 
 
 @app.get("/api/templates", dependencies=[Depends(auth)])
@@ -88,23 +119,29 @@ def _acro_fields(acro: list[dict]) -> list[dict]:
 
 @app.post("/api/forms", dependencies=[Depends(auth)])
 async def upload(file: UploadFile = File(...)):
-    head = await file.read(5)
-    if head != b"%PDF-":
-        raise HTTPException(400, "That file is not a PDF")
-    await file.seek(0)
-    form_id = storage.new_id()
-    path = storage.save_form(file.file, form_id)
-    if path.stat().st_size > MAX_UPLOAD:
-        storage.delete_form(form_id)
+    try:
+        data = await file.read(MAX_UPLOAD + 1)
+    finally:
+        await file.close()
+    if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "PDF is larger than 20 MB")
-    fp = detect.fingerprint(str(path))
-    info = detect.detect(str(path))
+    if not data.startswith(b"%PDF-"):
+        raise HTTPException(400, "That file is not a PDF")
+    form_id = storage.new_id()
+    fp = await document_work(detect.fingerprint, data)
+    info = await document_work(detect.detect, data)
     seed = storage.seed_for(fp)
     fields = seed["fields"] if seed else _acro_fields(info["acro"])
-    tpl = Template(form_id=form_id, name=(seed or {}).get("name") or os.path.splitext(file.filename or "form")[0],
+    tpl = Template(form_id=form_id, name=(seed or {}).get("name") or "Temporary form",
                    fingerprint=fp, pages=[PageInfo(width=p["width"], height=p["height"]) for p in info["pages"]],
                    fields=fields, rules=(seed or {}).get("rules", []), tables=(seed or {}).get("tables", []),
                    patient_name=(seed or {}).get("patient_name", []))
+    try:
+        storage.save_form(data, form_id)
+    except ValueError as e:
+        raise HTTPException(413, str(e))
+    except FileNotFoundError:
+        raise HTTPException(410, "Session cleared; start a new session")
     storage.save_template(tpl)
     return {"form_id": form_id, "matched_seed": bool(seed), "fields": len(tpl.fields)}
 
@@ -119,7 +156,7 @@ def page_image(form_id: str, page: int):
     path = _path(form_id)
     try:
         return Response(render.page_png(path, page), media_type="image/png",
-                        headers={"Cache-Control": "private, max-age=3600"})
+                        headers={"Cache-Control": "no-store"})
     except IndexError:
         raise HTTPException(404, "No such page")
 
@@ -136,7 +173,10 @@ def put_template(form_id: str, tpl: Template):
     if tpl.form_id != form_id:
         raise HTTPException(400, "form_id mismatch")
     tpl.version += 1
-    storage.save_template(tpl)
+    try:
+        storage.save_template(tpl)
+    except ValueError as e:
+        raise HTTPException(413, str(e))
     return {"saved": True, "version": tpl.version}
 
 
@@ -183,7 +223,10 @@ async def _read_docs(files: list[UploadFile]) -> list[tuple[str, bytes]]:
         raise HTTPException(413, f"At most {MAX_DOCS} documents at a time")
     out = []
     for f in files:
-        data = await f.read(MAX_DOC + 1)
+        try:
+            data = await f.read(MAX_DOC + 1)
+        finally:
+            await f.close()
         if len(data) > MAX_DOC:
             raise HTTPException(413, f"{f.filename}: larger than 15 MB")
         if not data.startswith(DOC_TYPES):

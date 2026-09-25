@@ -55,15 +55,6 @@ export default function FillForm({ formId, go }) {
     } catch (e) { setMsg({ err: e.message }); } finally { setBusy(false); }
   }
 
-  function exportValues() {
-    download(new Blob([JSON.stringify(values, null, 2)], { type: "application/json" }), `${tpl.name.replace(/[^\w-]+/g, "_")}_values.json`);
-  }
-  function importValues(file) {
-    if (!file) return;
-    file.text().then((t) => { const data = JSON.parse(t); const keys = new Set(tpl.fields.map((f) => f.id)); setValues(Object.fromEntries(Object.entries(data).filter(([k]) => keys.has(k)))); setMsg({ ok: `Loaded values from ${file.name}` }); })
-      .catch(() => setMsg({ err: "That file is not a values JSON saved from FormFill." }));
-  }
-
   if (!tpl) return <p className="muted pad">{msg?.err || "Loading form…"}</p>;
   if (!tpl.fields.length) return (
     <div className="pad"><p>This form has no fields yet.</p><button className="btn primary" onClick={() => go("design", formId)}>Map its fields</button></div>
@@ -78,8 +69,6 @@ export default function FillForm({ formId, go }) {
         </span>
         <span className="muted">{filled}/{tpl.fields.length}</span>
         <span className="spacer" />
-        <label className="btn ghost">Load values<input type="file" accept="application/json" hidden onChange={(e) => importValues(e.target.files[0])} /></label>
-        <button className="btn ghost" onClick={exportValues} disabled={!filled}><span className="wide-only">Save values to my computer</span><span className="narrow-only">Save values</span></button>
         <button className="btn" onClick={() => setShowDocs(true)}>Documents &amp; bills</button>
         <button className="btn primary" onClick={generate} disabled={busy || !filled || errors.length > 0}
           title={errors.length ? "Fix the errors listed under Checks first" : undefined}>{busy ? "Filling…" : "Download filled PDF"}</button>
@@ -87,7 +76,7 @@ export default function FillForm({ formId, go }) {
       {msg && <p className={msg.err ? "error banner" : "ok banner"} role={msg.err ? "alert" : "status"}>{msg.err || msg.ok}</p>}
 
       <div className="fill-body">
-        <form className="fields" onSubmit={(e) => e.preventDefault()}>
+        <form autoComplete="off" className="fields" onSubmit={(e) => e.preventDefault()}>
           {issues.length > 0 && (
             <section className="checks" aria-label="Checks">
               <h3>Checks <span className="muted">{errors.length ? `${errors.length} to fix` : "looks consistent"}{issues.length - errors.length ? ` · ${issues.length - errors.length} to review` : ""}</span></h3>

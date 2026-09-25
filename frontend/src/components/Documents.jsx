@@ -78,7 +78,7 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
       <header className="docs-head">
         <div>
           <h2 id="docs-title">Documents &amp; bills</h2>
-          <p className="muted">Files stay in this tab. The server reads them in memory and keeps nothing.</p>
+          <p className="muted">Documents are processed in memory. Clear the session when finished. Requested downloads stay on your device.</p>
           {features && (
             <p className={`engine-badge ${features.engine === "typellm" ? "ai" : ""}`}>
               {features.engine === "typellm"

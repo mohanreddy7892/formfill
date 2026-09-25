@@ -1,5 +1,7 @@
 # Review fixes — 25 September 2026
 
+Historical correctness review. Storage, authentication-session and MCP download behavior are superseded by [PRIVACY.md](PRIVACY.md).
+
 This update fixes the six issues identified in the code review.
 Source code, regression tests and deployment instructions are included.
 

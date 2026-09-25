@@ -1,0 +1,25 @@
+services:
+  formfill:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      FORMFILL_TOKEN: ${FORMFILL_TOKEN:?set FORMFILL_TOKEN to protect the app endpoint}
+      TYPELLM_URL: ${TYPELLM_URL:-}          # optional AI reading, see docs/TYPELLM.md
+      TYPELLM_MODEL: ${TYPELLM_MODEL:-}
+    volumes:
+      - formfill-data:/data            # blank forms + field layouts only
+    restart: unless-stopped
+
+  formfill-mcp:                        # MCP over Streamable HTTP for Claude and other AI tools
+    build: ./mcp_server
+    ports: ["8765:8765"]
+    environment:
+      FORMFILL_URL: http://formfill:8000
+      FORMFILL_TOKEN: ${FORMFILL_TOKEN:?set FORMFILL_TOKEN to protect the app endpoint}
+      FORMFILL_MCP_TOKEN: ${FORMFILL_MCP_TOKEN:?set FORMFILL_MCP_TOKEN to protect the MCP endpoint}
+      FORMFILL_MCP_PUBLIC_URL: ${FORMFILL_MCP_PUBLIC_URL:-http://localhost:8765}
+    depends_on: [formfill]
+    restart: unless-stopped
+
+volumes:
+  formfill-data:

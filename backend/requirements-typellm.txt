@@ -1,0 +1,2 @@
+# Optional: TypeLLM type-safe extraction (needs a separate SGLang GPU server; see docs/TYPELLM.md)
+typellm @ git+https://github.com/TypeLLM/TypeLLM@ca0578279b735b29b963ad538bb73db5c5d5a4e7

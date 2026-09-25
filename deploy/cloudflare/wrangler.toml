@@ -1,0 +1,17 @@
+name = "formfill-edge"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Your domain on Cloudflare. Both hostnames need a DNS record (proxied, orange cloud);
+# `wrangler deploy` creates them automatically for custom_domain routes.
+routes = [
+  { pattern = "forms.example.com", custom_domain = true },
+  { pattern = "mcp.example.com",   custom_domain = true },
+]
+
+[vars]
+APP_ORIGIN = "https://formfill-XXXXXXXX-el.a.run.app"       # from deploy.sh output
+MCP_ORIGIN = "https://formfill-mcp-XXXXXXXX-el.a.run.app"   # from deploy.sh output
+MCP_HOST   = "mcp.example.com"
+
+# No Worker APP_TOKEN secret. Users authenticate with the backend token prompt.

@@ -1,3 +1,7 @@
+# Browser edition
+
+The deployed Sites version uses browser-only document processing. See [SITES.md](SITES.md) for its lifecycle and limitations. The following describes the separately installed Python/MCP services.
+
 # Temporary processing and no document persistence
 
 FormFill's application code does not write uploaded forms, bills, entered values,

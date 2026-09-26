@@ -29,8 +29,8 @@ export default function Library({ go }) {
   return (
     <section className="library">
       <div className="library-intro">
-        <h1>Fill any PDF form without printing it.</h1>
-        <p>Upload a form for this temporary session, fill it, and explicitly download the result. Forms and layouts expire after 15 minutes; use Clear session when finished.</p>
+        <h1>Fill a PDF form without printing it.</h1>
+        <p>Choose a form, fill it, and download the result. Your documents stay in this browser tab. Forms and layouts expire after 15 minutes; use Clear session when finished.</p>
       </div>
 
       <label
@@ -41,7 +41,7 @@ export default function Library({ go }) {
       >
         <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const file = e.target.files[0]; e.target.value = ""; upload(file); }} />
         <span className="dropzone-title">{busy ? "Reading the form…" : "Drop a blank PDF form here"}</span>
-        <span className="dropzone-sub">or <u>choose a file</u> · up to 20 MB</span>
+        <span className="dropzone-sub">or <u>choose a file</u> · up to 20 MB and 40 pages</span>
       </label>
       {error && <p className="error" role="alert">{error}</p>}
 

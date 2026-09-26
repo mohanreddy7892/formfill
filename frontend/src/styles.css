@@ -232,3 +232,5 @@ dialog.docs::backdrop { background: rgba(31, 39, 51, 0.45); }
 .doc-table input.needs-review { border-color: var(--amber); background: #fff8eb; box-shadow: 0 0 0 1px var(--amber) inset; }
 .demo-banner { margin: 0; padding: 8px 24px; background: var(--ink-soft); color: var(--ink); font-size: 13.5px; font-weight: 600; border-bottom: 1px solid var(--rule); }
 .sample-btn { align-self: flex-start; }
+
+.mode-text svg, .mode-boxes svg, .mode-checkbox svg { touch-action: none; }

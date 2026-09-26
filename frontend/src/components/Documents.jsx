@@ -5,8 +5,8 @@ import { assignBills, download, wholeRupees } from "../util.js";
 const BILL_CATS = new Set(["hospital_bill", "pharmacy_bill", "lab_bill"]);
 const KIND_OF = { hospital_bill: "hospital", pharmacy_bill: "pharmacy", lab_bill: "lab" };
 
-/** Documents & bills: scan (offline OCR on the server), review, add bills to the form, build the claim pack.
- *  Files stay in this browser tab; the server reads them in memory and keeps nothing. */
+/** Documents & bills: scan (OCR in the browser), review, add bills to the form, build the claim pack.
+ *  Files stay in this browser tab; the browser processes them in memory and keeps nothing after clearing. */
 export default function Documents({ formId, tpl, values, effective, setValues, onClose }) {
   const [features, setFeatures] = useState(null);
   const [docs, setDocs] = useState([]);           // {id, file, category, bill, names, method, busy, error}
@@ -31,6 +31,7 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
   async function add(fileList) {
     const files = [...fileList].filter((f) => /pdf|image/.test(f.type) || /\.(pdf|jpe?g|png|tiff?)$/i.test(f.name));
     if (!files.length) return;
+    if (docs.length + files.length > 30 || [...docs.map(d => d.file), ...files].reduce((n,f) => n + f.size, 0) > 60*1024*1024 || files.some(f => f.size > 20*1024*1024)) { setMsg({err: "Choose up to 30 documents, 20 MB each and 60 MB total."}); return; }
     const fresh = files.map((file) => ({ id: crypto.randomUUID(), file, category: "other", busy: true }));
     setDocs((d) => [...d, ...fresh]); setMsg(null); setReport(null);
     if (!features?.ocr) { setDocs((d) => d.map((x) => (x.busy ? { ...x, busy: false } : x))); return; }
@@ -78,12 +79,12 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
       <header className="docs-head">
         <div>
           <h2 id="docs-title">Documents &amp; bills</h2>
-          <p className="muted">Documents are processed in memory. Clear the session when finished. Requested downloads stay on your device.</p>
+          <p className="muted">Documents are processed in this browser tab. Clear the session when finished. Requested downloads stay on your device.</p>
           {features && (
             <p className={`engine-badge ${features.engine === "typellm" ? "ai" : ""}`}>
               {features.engine === "typellm"
                 ? <>Reading with AI · TypeLLM{features.model ? ` (${features.model})` : ""}, self-hosted{features.vision ? ", sees photos" : ""}</>
-                : <>Reading with built-in text rules{features.typellm_error ? " · AI engine unavailable" : ""}</>}
+                : <>Reading on your device · review extracted details{features.typellm_error ? " · AI engine unavailable" : ""}</>}
             </p>
           )}
         </div>
@@ -92,9 +93,9 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
 
       <div className="docs-body">
         <label className="dropzone small" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(e.dataTransfer.files); }}>
-          <input type="file" multiple accept="application/pdf,image/*" hidden onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+          <input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" hidden onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
           <span className="dropzone-title">Add bills, reports, discharge summary, cheque, ID…</span>
-          <span className="dropzone-sub">Photos or PDFs · {features?.ocr ? "bills are read automatically" : "automatic reading is off on this server"}</span>
+          <span className="dropzone-sub">Photos or PDFs · {features?.ocr ? "bills are read automatically" : "automatic reading unavailable"}</span>
         </label>
 
         {window.__FORMFILL_DEMO__ && docs.length === 0 && (
@@ -123,9 +124,9 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
                     {d.error && <small className="error">{d.error}</small>}
                     {d.note && <small className="muted">{d.note}</small>}
                     {d.bill?.review?.length > 0 && (
-                      <small className="warn">Check {d.bill.review.map((k) => ({ bill_no: "bill no.", date: "date", amount: "amount" }[k])).join(", ")}: AI and text reading differ</small>
+                      <small className="warn">Check {d.bill.review.map((k) => ({ bill_no: "bill no.", date: "date", amount: "amount" }[k])).join(", ")}: automatic reading needs review</small>
                     )}
-                    {d.names?.status === "not_found" && <small className="error">Patient name could not be fully matched. Check this document before submission.</small>}
+                    {["not_found", "unknown"].includes(d.names?.status) && <small className="error">Patient name could not be fully matched. Check this document before submission.</small>}
                     {d.names?.status === "variant" && (
                       <small className="warn">Name spelled {d.names.variants.map((v) => `“${v.found}”`).join(", ")} (form: {d.names.variants.map((v) => v.expected).join(", ")})</small>
                     )}

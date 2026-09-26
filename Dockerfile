@@ -1,10 +1,11 @@
 # ---- build React ----
-FROM node:20-alpine AS web
-WORKDIR /web
-COPY frontend/package*.json ./
-RUN npm install
-COPY frontend/ ./
-RUN npm run build
+FROM node:24-alpine AS web
+WORKDIR /build
+COPY frontend/package*.json frontend/
+RUN npm ci --prefix frontend
+COPY frontend/ frontend/
+COPY scripts/ scripts/
+RUN node scripts/prepare-browser-assets.mjs && npm --prefix frontend run build
 
 # ---- API + static ----
 FROM python:3.12-slim
@@ -15,7 +16,7 @@ WORKDIR /app
 COPY backend/requirements.txt backend/requirements-typellm.txt backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/ backend/
-COPY --from=web /web/dist frontend/dist
+COPY --from=web /build/frontend/dist frontend/dist
 ENV PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8000
 WORKDIR /app/backend

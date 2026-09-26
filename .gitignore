@@ -15,3 +15,9 @@ filled/
 private/
 *.log
 *.core
+
+frontend/public/ocr/
+frontend/public/pdf/
+.sites-runtime/
+
+frontend/src/browser/.runtime-api.mjs

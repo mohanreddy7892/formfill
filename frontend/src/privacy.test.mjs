@@ -17,7 +17,7 @@ test('session clear rotates identity, revokes previews and does not use browser 
     return new Response(path.endsWith('.png') ? 'PNG' : '{}');
   };
   try {
-    const {api,clearSession} = await import('./api.js?privacy-basic');
+    const {api,clearSession} = await import('./server-api.js?privacy-basic');
     await api.templates();
     const oldSession=calls[1].headers['X-FormFill-Session'];
     assert.equal(calls[1].headers['X-FormFill-Token'],'test-token');
@@ -45,7 +45,7 @@ test('a late result from a cleared session cannot be downloaded', async () => {
     return await new Promise(resolve=>{release=()=>resolve(new Response('%PDF-private'));});
   };
   try {
-    const {api,clearSession}=await import('./api.js?privacy-late');
+    const {api,clearSession}=await import('./server-api.js?privacy-late');
     const pending=api.fill('example',{});
     const rejected=assert.rejects(pending,{name:'AbortError'});
     await clearSession();

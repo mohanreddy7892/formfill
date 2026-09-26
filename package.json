@@ -1,0 +1,9 @@
+{
+  "name": "formfill-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/prepare-browser-assets.mjs && npm --prefix frontend run build && node scripts/copy-site.mjs",
+    "dev": "npm --prefix frontend run dev --"
+  }
+}

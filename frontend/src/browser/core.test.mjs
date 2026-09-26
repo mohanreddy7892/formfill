@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {PDFDocument,StandardFonts} from 'pdf-lib';
+import {checkedValues,fillPdf} from './pdf.js';
+import {parseDocument,nameCheck} from './documents.js';
+import {boxRuns} from './detect.js';
+const tpl={pages:[{width:595,height:842}],fields:[{id:'name',label:'Name',page:0,type:'text',rect:[30,40,300,60]}],rules:[{kind:'required',of:['name'],severity:'error',message:'Name required'}]};
+test('exports enforce blocking rules',()=>assert.throws(()=>checkedValues(tpl,{}),/Name required/));
+test('bill reading preserves decimal amounts',()=>{const r=parseDocument('EXAMPLE PHARMACY\nTax Invoice\nPatient Name: TEST PERSON\nBill No: 12345\nDate: 25-09-2026\nGrand Total: 1234.56','', ['TEST PERSON']);assert.equal(r.bill.amount,1234.56);assert.equal(r.bill.date,'2026-09-25');assert.equal(r.names.status,'match');});
+test('a surname or initial is not a patient match',()=>{assert.equal(nameCheck(['TEST PERSON'],'Patient Name: T PERSON').status,'not_found');assert.equal(nameCheck(['TEST PERSON'],'Receipt for TEST PERSON').status,'unknown');});
+test('invalid dates are not silently normalized',()=>assert.equal(parseDocument('Tax Invoice\nDate: 31-02-2026').bill.date,null));
+test('box geometry groups adjacent rectangles',()=>{const path=[0,10,10,1,20,10,1,20,20,1,10,20,4,0,23,10,1,33,10,1,33,20,1,23,20,4];const r=boxRuns({fnArray:[91],argsArray:[[20,[path],[10,10,33,20]]]},{constructPath:91},{transform:[1,0,0,-1,0,842]},[]);assert.equal(r.length,1);assert.equal(r[0].boxes.length,2);assert.deepEqual(r[0].boxes[0],[10,822,20,832]);});
+test('overlay filling produces a real PDF',async()=>{const doc=await PDFDocument.create();doc.addPage([595,842]);const bytes=await fillPdf(await doc.save(),tpl,{name:'TEST PERSON'});const out=await PDFDocument.load(bytes);assert.equal(out.getPageCount(),1);assert.equal(out.getForm().getFields().length,0);});
+test('native PDF fields are filled and flattened',async()=>{const doc=await PDFDocument.create(),page=doc.addPage([595,842]);doc.getForm().createTextField('Name').addToPage(page,{x:30,y:780,width:270,height:20});const t={...tpl,fields:[{...tpl.fields[0],type:'acro',acro_name:'Name'}]};const bytes=await fillPdf(await doc.save(),t,{name:'TEST PERSON'});const out=await PDFDocument.load(bytes);assert.equal(out.getForm().getFields().length,0);assert.equal(out.getPageCount(),1);});
+test('text that cannot fit is blocked instead of clipped',async()=>{const doc=await PDFDocument.create();doc.addPage([595,842]);await assert.rejects(fillPdf(await doc.save(),tpl,{name:'A'.repeat(200)}),/does not fit/);});

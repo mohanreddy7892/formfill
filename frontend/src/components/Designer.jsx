@@ -142,7 +142,7 @@ export default function Designer({ formId, go }) {
             </div>
           )}
           <PageCanvas formId={formId} page={page} info={info} className={`mode-${mode}`}
-            svgProps={{ ref: svgRef, onMouseDown: onDown, onMouseMove: onMove, onMouseUp: onUp, onMouseLeave: () => setDraft(null) }}>
+            svgProps={{ ref: svgRef, onPointerDown: (e) => { if (mode !== "select") e.currentTarget.setPointerCapture(e.pointerId); onDown(e); }, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: () => setDraft(null) }}>
             {tpl.fields.filter((f) => f.page === page).map((f) => (
               <g key={f.id} className="field-hit" onClick={(e) => { if (mode === "select") { e.stopPropagation(); setActiveId(f.id); } }}>
                 <Outline f={f} className={f.id === activeId ? "outline active" : "outline mapped"} />

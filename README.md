@@ -1,3 +1,11 @@
+# FormFill — browser edition
+
+The Sites app now processes PDFs and English OCR on your device. Documents and personal values stay in temporary browser memory; there is no document-processing server for this edition. See [Sites usage, limits and privacy](docs/SITES.md).
+
+Run `npm ci --prefix frontend` and `npm run build` for the browser edition. Explicit downloads remain on your device.
+
+The Python backend and MCP installation below are still available separately. They do not share sessions with the browser app.
+
 # FormFill
 
 Fill PDF forms, inspect bills with local OCR, and build a claim-pack PDF.

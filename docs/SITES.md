@@ -29,3 +29,7 @@ Run `node --test frontend/src/browser/core.test.mjs frontend/src/browser/runtime
 The runtime tests use Node canvas adapters, fictional in-memory documents and the real local OCR/PDF engines. They are not a substitute for device/browser QA. The legacy API privacy tests cover `server-api.js`; the hosted entrypoint imports only the browser API. The old static mock demo is retained as historical source and is not the deployed app.
 
 Validation for this migration: core/unit tests and Node-adapted document processing passed. Cloud-browser preview was blocked by the environment, so visual browser QA and WebMCP validation were unavailable. Test the live app on the target device before relying on a claim submission.
+
+## Printed and scanned box detection
+
+When native fields are absent, printed vector box rows become editable suggested fields. If vector detection finds too few boxes, the browser renders a bounded page image and detects enclosed rectangular interiors. Scanned forms therefore no longer require drawing every box manually. The layout review opens before filling; labels on image-only pages are generic and must be checked, and missed or mistaken boxes can be corrected with the existing designer. Instructions pages remain unfilled. No OCR text, uploaded PDF or rendered user page is added to the build or repository.

@@ -24,7 +24,7 @@ export function boxRuns(operators, OPS, viewport, words) {
       let points=[];
       for(let j=0;j<path.length;) {
         const kind=path[j++];
-        if(kind===0){points=[];points.push([path[j++],path[j++]]);}
+        if(kind===0){if(points.length>=5 && points[0][0]===points.at(-1)[0] && points[0][1]===points.at(-1)[1])add(points);points=[];points.push([path[j++],path[j++]]);}
         else if(kind===1)points.push([path[j++],path[j++]]);
         else if(kind===2){j+=4;points.push([path[j++],path[j++]]);}
         else if(kind===3){j+=2;points.push([path[j++],path[j++]]);}
@@ -35,6 +35,10 @@ export function boxRuns(operators, OPS, viewport, words) {
       if(points.length>=5 && points[0][0]===points.at(-1)[0] && points[0][1]===points.at(-1)[1])add(points);
     }
   }
+  return groupBoxes(boxes,words);
+}
+
+export function groupBoxes(boxes,words=[]) {
   const unique=[...new Map(boxes.map(b=>[b.map(x=>Math.round(x*2)).join(','),b])).values()].sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
   const rows=[];
   for(const b of unique){const row=rows.find(r=>Math.abs(r[0][1]-b[1])<=2.2);row?row.push(b):rows.push([b]);}
@@ -45,6 +49,39 @@ export function boxRuns(operators, OPS, viewport, words) {
     const near=words.filter(w=>Math.abs(w.y-b[1])<8 && w.x+w.width<=b[0]+2 && b[0]-w.x<220).sort((a,b)=>a.x-b.x);
     return {id:`r${i}`,boxes,kind:boxes.length===1?'checkbox':'boxes',label:near.map(w=>w.text).join(' ').slice(-60).replace(/[:\s]+$/,'')};
   });
+}
+
+// Scans have no PDF paths. Find enclosed, mostly empty box interiors in a bounded
+// grayscale raster, then group them using the same displayed-point coordinates.
+export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
+  const {width,height,data}=image,n=width*height;
+  if(n>6000000)throw new Error('Detection image is too large.');
+  const white=new Uint8Array(n),queue=new Uint32Array(n),boxes=[];
+  for(let i=0;i<n;i++)white[i]=(data[i*4]+data[i*4+1]+data[i*4+2])/3>225?1:0;
+  for(let start=0;start<n;start++){
+    if(!white[start])continue;
+    let head=0,tail=1,minX=width,minY=height,maxX=0,maxY=0,touches=false;
+    queue[0]=start;white[start]=0;
+    while(head<tail){
+      const p=queue[head++],x=p%width,y=(p/width)|0;
+      minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+      if(x===0||y===0||x===width-1||y===height-1)touches=true;
+      if(x>0&&white[p-1]){white[p-1]=0;queue[tail++]=p-1;}
+      if(x+1<width&&white[p+1]){white[p+1]=0;queue[tail++]=p+1;}
+      if(y>0&&white[p-width]){white[p-width]=0;queue[tail++]=p-width;}
+      if(y+1<height&&white[p+width]){white[p+width]=0;queue[tail++]=p+width;}
+    }
+    const w=(maxX-minX+1)/scaleX,h=(maxY-minY+1)/scaleY;
+    if(!touches && w>=5 && w<=18 && h>=5 && h<=18 && w/h>.6 && w/h<1.7 && tail/((maxX-minX+1)*(maxY-minY+1))>.65)
+      boxes.push([(minX-.5)/scaleX,(minY-.5)/scaleY,(maxX+1.5)/scaleX,(maxY+1.5)/scaleY]);
+  }
+  return groupBoxes(boxes,words);
+}
+
+export function suggestedFields(runs,page) {
+  return runs.map((run,i)=>({id:`detected_${page}_${i}`,page,group:`Page ${page+1}`,label:run.label||`Field ${i+1}`,
+    type:run.boxes.length>1?'boxes':'checkbox',boxes:run.boxes.length>1?run.boxes:[],rect:run.boxes.length===1?run.boxes[0]:null,
+    options:[],upper:true,align:'left',clear:false,multi:false,hint:'Suggested from printed boxes. Check its label and position before filling.'}));
 }
 
 export function nativeFields(annotations,viewport,page,existing=[]) {

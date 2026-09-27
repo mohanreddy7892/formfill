@@ -6,7 +6,7 @@ import {createWorker} from 'tesseract.js';
 import {PDFDocument,StandardFonts,rgb} from 'pdf-lib';
 import {computedValues,check} from '../demo/rules.js';
 import {fillPdf} from './pdf.js';
-import {boxRuns,nativeFields} from './detect.js';
+import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields} from './detect.js';
 import {categories,parseDocument} from './documents.js';
 import seed from './medi-assist.json';
 
@@ -61,19 +61,27 @@ async function upload(file){return operation(async g=>{
       if(!Number.isFinite(viewport.width*viewport.height)||viewport.width>4000||viewport.height>4000)throw new Error('This PDF page is too large for browser processing.');
       pages.push({width:viewport.width,height:viewport.height,transform:[...viewport.transform]});
       const words=textItems(await page.getTextContent(),viewport);printed+=linesOf(words)+'\n';
-      fields.push(...nativeFields(await page.getAnnotations(),viewport,i,fields));
-      detected.push({width:viewport.width,height:viewport.height,runs:boxRuns(await page.getOperatorList(),pdfjs.OPS,viewport,words)});
+      const native=nativeFields(await page.getAnnotations(),viewport,i,fields);
+      fields.push(...native);
+      let runs=boxRuns(await page.getOperatorList(),pdfjs.OPS,viewport,words);
+      if(!native.length && runs.reduce((n,r)=>n+r.boxes.length,0)<10){
+        const canvas=await canvasFor(page,g,2.5);
+        try{const raster=rasterBoxRuns(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),canvas.width/viewport.width,canvas.height/viewport.height,words);if(raster.reduce((n,r)=>n+r.boxes.length,0)>runs.reduce((n,r)=>n+r.boxes.length,0))runs=raster;}
+        finally{canvas.width=canvas.height=0;}
+      }
+      if(!native.length)fields.push(...suggestedFields(runs,i));
+      detected.push({width:viewport.width,height:viewport.height,runs});
       page.cleanup();
     }
     // A title alone is not sufficient: every pre-mapped box must match detected geometry.
     const expected=seed.fields.flatMap(f=>(f.boxes||[]).map(b=>({page:f.page,b})));
     const matches=expected.length>0 && expected.every(({page,b})=>detected[page]?.runs.some(r=>r.boxes.some(q=>q.every((x,j)=>Math.abs(x-b[j])<1.2))));
     const matched=matches && /medi\s*assist/i.test(printed);
-    const tpl={form_id,name:matched?seed.name:'Temporary form',version:1,pages,fields:matched?clone(seed.fields):fields,rules:matched?clone(seed.rules||[]):[],tables:matched?clone(seed.tables||[]):[],patient_name:matched?clone(seed.patient_name||[]):[]};
+    const tpl={form_id,name:matched?seed.name:'Temporary form',version:1,review_layout:!matched&&fields.some(f=>f.id.startsWith('detected_')),pages,fields:matched?clone(seed.fields):fields,rules:matched?clone(seed.rules||[]):[],tables:matched?clone(seed.tables||[]):[],patient_name:matched?clone(seed.patient_name||[]):[]};
     return {tpl,detect:{pages:detected,acro:[]},matched};
   });
   guard(g);forms.set(form_id,{bytes,...result});
-  return {form_id,fields:result.tpl.fields.length,matched_seed:result.matched};
+  return {form_id,fields:result.tpl.fields.length,matched_seed:result.matched,review_layout:result.tpl.review_layout};
 });}
 
 async function pageImage(id,index){

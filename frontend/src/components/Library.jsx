@@ -16,7 +16,7 @@ export default function Library({ go }) {
     setError(""); setBusy(true);
     try {
       const r = await api.upload(file);
-      go(r.fields > 0 ? "fill" : "design", r.form_id);
+      go(r.fields > 0 && !r.review_layout ? "fill" : "design", r.form_id);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 

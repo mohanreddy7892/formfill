@@ -6,7 +6,7 @@ import {createWorker} from 'tesseract.js';
 import {PDFDocument,StandardFonts,rgb} from 'pdf-lib';
 import {computedValues,check} from '../demo/rules.js';
 import {fillPdf} from './pdf.js';
-import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields} from './detect.js';
+import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields,mergeDetectedRuns,isInstructionPage} from './detect.js';
 import {categories,parseDocument} from './documents.js';
 import seed from './medi-assist.json';
 
@@ -63,10 +63,11 @@ async function upload(file){return operation(async g=>{
       const words=textItems(await page.getTextContent(),viewport);printed+=linesOf(words)+'\n';
       const native=nativeFields(await page.getAnnotations(),viewport,i,fields);
       fields.push(...native);
-      let runs=boxRuns(await page.getOperatorList(),pdfjs.OPS,viewport,words);
-      if(!native.length && runs.reduce((n,r)=>n+r.boxes.length,0)<10){
+      const instructions=isInstructionPage(words);
+      let runs=instructions?[]:boxRuns(await page.getOperatorList(),pdfjs.OPS,viewport,words);
+      if(!native.length&&!instructions){
         const canvas=await canvasFor(page,g,2.5);
-        try{const raster=rasterBoxRuns(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),canvas.width/viewport.width,canvas.height/viewport.height,words);if(raster.reduce((n,r)=>n+r.boxes.length,0)>runs.reduce((n,r)=>n+r.boxes.length,0))runs=raster;}
+        try{const raster=rasterBoxRuns(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),canvas.width/viewport.width,canvas.height/viewport.height,words);runs=mergeDetectedRuns(runs,raster,words);}
         finally{canvas.width=canvas.height=0;}
       }
       if(!native.length)fields.push(...suggestedFields(runs,i));

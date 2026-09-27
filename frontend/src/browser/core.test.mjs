@@ -44,3 +44,30 @@ test('repeated-start closed vector subpaths are detected before the next move',(
   const runs=boxRuns({fnArray:[91],argsArray:[[20,[path],[10,10,33,20]]]},{constructPath:91},{transform:[1,0,0,-1,0,842]},[]);
   assert.equal(runs[0].boxes.length,2);
 });
+
+test('blank text areas and small breaks in scan borders are detected',async()=>{
+  const {rasterBoxRuns,suggestedFields}=await import('./detect.js');
+  const width=300,height=100,data=new Uint8ClampedArray(width*height*4).fill(255);
+  const mark=(x,y)=>{const i=(y*width+x)*4;data[i]=data[i+1]=data[i+2]=190;};
+  for(const [left,right] of [[20,140],[180,260]]){
+    for(let x=left;x<=right;x++){if(x!==40)mark(x,20);mark(x,44);}
+    for(let y=20;y<=44;y++){mark(left,y);mark(right,y);}
+  }
+  // A printed content block must not be offered as a blank input.
+  for(let y=25;y<39;y++)for(let x=190;x<245;x++)mark(x,y);
+  const fields=suggestedFields(rasterBoxRuns({width,height,data},2,2),0);
+  assert.equal(fields.length,1);assert.equal(fields[0].type,'text');
+  assert.ok(fields[0].rect[2]-fields[0].rect[0]>55);
+});
+test('instruction headings exclude guidance tables without excluding forms',async()=>{
+  const {isInstructionPage}=await import('./detect.js');
+  assert.equal(isInstructionPage([{text:'GUIDANCE FOR FILLING CLAIM FORM',y:25}]),true);
+  assert.equal(isInstructionPage([{text:'INSTRUCTIONS TO FILL THE FORM',y:25}]),true);
+  assert.equal(isInstructionPage([{text:'CLAIM FORM - PART B',y:25},{text:'instructions for filling',y:500}]),false);
+});
+test('vector and raster detections do not duplicate the same cells',async()=>{
+  const {mergeDetectedRuns}=await import('./detect.js');
+  const runs=mergeDetectedRuns([{kind:'boxes',boxes:[[10,10,20,20],[23,10,33,20]]}],
+    [{kind:'boxes',boxes:[[10.5,10.5,19.5,19.5],[23.5,10.5,32.5,19.5],[36,10,46,20]]}]);
+  assert.equal(runs.length,1);assert.equal(runs[0].boxes.length,3);
+});

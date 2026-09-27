@@ -56,11 +56,22 @@ export function groupBoxes(boxes,words=[]) {
 export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
   const {width,height,data}=image,n=width*height;
   if(n>6000000)throw new Error('Detection image is too large.');
-  const white=new Uint8Array(n),queue=new Uint32Array(n),boxes=[];
+  const white=new Uint8Array(n),queue=new Uint32Array(n),boxes=[],textAreas=[];
   // Pale gray borders in scanned forms can exceed 225 after interpolation.
   // Keep those borders closed; otherwise adjacent cells leak into the background
   // and one real input is incorrectly split into shorter fields or checkboxes.
   for(let i=0;i<n;i++)white[i]=(data[i*4]+data[i*4+1]+data[i*4+2])/3>245?1:0;
+  // Close sub-pixel scan gaps in borders without widening or inventing cells.
+  // Opening the white mask is equivalent to closing the dark border mask.
+  const interior=new Uint8Array(n);
+  for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
+    const p=y*width+x;
+    interior[p]=white[p-width-1]&white[p-width]&white[p-width+1]&white[p-1]&white[p]&white[p+1]&white[p+width-1]&white[p+width]&white[p+width+1];
+  }
+  for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
+    const p=y*width+x;
+    white[p]=interior[p-width-1]|interior[p-width]|interior[p-width+1]|interior[p-1]|interior[p]|interior[p+1]|interior[p+width-1]|interior[p+width]|interior[p+width+1];
+  }
   for(let start=0;start<n;start++){
     if(!white[start])continue;
     let head=0,tail=1,minX=width,minY=height,maxX=0,maxY=0,touches=false;
@@ -75,16 +86,30 @@ export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
       if(y+1<height&&white[p+width]){white[p+width]=0;queue[tail++]=p+width;}
     }
     const w=(maxX-minX+1)/scaleX,h=(maxY-minY+1)/scaleY;
-    if(!touches && w>=5 && w<=18 && h>=5 && h<=18 && w/h>.6 && w/h<1.7 && tail/((maxX-minX+1)*(maxY-minY+1))>.65)
-      boxes.push([(minX-.5)/scaleX,(minY-.5)/scaleY,(maxX+1.5)/scaleX,(maxY+1.5)/scaleY]);
+    const density=tail/((maxX-minX+1)*(maxY-minY+1));
+    const rect=[(minX-.5)/scaleX,(minY-.5)/scaleY,(maxX+1.5)/scaleX,(maxY+1.5)/scaleY];
+    if(!touches && w>=5 && w<=18 && h>=5 && h<=18 && w/h>.6 && w/h<1.7 && density>.65)boxes.push(rect);
+    else if(!touches && w>18 && w<=520 && h>=5 && h<=16 && w/h>=1.8 && density>.985)textAreas.push(rect);
   }
-  return groupBoxes(boxes,words);
+  return [...groupBoxes(boxes,words),...textAreas.map((rect,i)=>({id:`t${i}`,boxes:[rect],kind:'text',label:words.filter(w=>Math.abs(w.y-rect[1])<8&&w.x+w.width<=rect[0]+2&&rect[0]-w.x<140).map(w=>w.text).join(' ').slice(-60)}))];
+}
+
+export function isInstructionPage(words) {
+  const heading=words.filter(w=>w.y<100).map(w=>w.text).join(' ');
+  return /\b(?:guidance|instructions)\s+(?:for|on|to)\s+fill(?:ing)?\b/i.test(heading);
+}
+
+export function mergeDetectedRuns(vector,raster,words=[]) {
+  const boxes=vector.filter(r=>r.kind!=='text').flatMap(r=>r.boxes);
+  for(const box of raster.filter(r=>r.kind!=='text').flatMap(r=>r.boxes))
+    if(!boxes.some(v=>v.every((x,i)=>Math.abs(x-box[i])<1.8)))boxes.push(box);
+  return [...groupBoxes(boxes,words),...raster.filter(r=>r.kind==='text')];
 }
 
 export function suggestedFields(runs,page) {
   return runs.map((run,i)=>({id:`detected_${page}_${i}`,page,group:`Page ${page+1}`,label:run.label||`Field ${i+1}`,
-    type:run.boxes.length>1?'boxes':'checkbox',boxes:run.boxes.length>1?run.boxes:[],rect:run.boxes.length===1?run.boxes[0]:null,
-    options:[],upper:true,align:'left',clear:false,multi:false,hint:'Suggested from printed boxes. Check its label and position before filling.'}));
+    type:run.kind==='text'?'text':run.boxes.length>1?'boxes':'checkbox',boxes:run.kind!=='text'&&run.boxes.length>1?run.boxes:[],rect:run.boxes.length===1?run.boxes[0]:null,
+    options:[],upper:true,align:'left',clear:false,multi:false,hint:'Suggested from printed areas. Check its label and position before filling.'}));
 }
 
 export function nativeFields(annotations,viewport,page,existing=[]) {

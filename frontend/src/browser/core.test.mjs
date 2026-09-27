@@ -27,6 +27,18 @@ test('image-only gray box rows become editable field suggestions',async()=>{
 test('empty raster does not invent form fields',async()=>{
   const {rasterBoxRuns}=await import('./detect.js');assert.deepEqual(rasterBoxRuns({width:100,height:100,data:new Uint8ClampedArray(40000).fill(255)},2,2),[]);
 });
+test('faint cells within a phone row remain one complete input',async()=>{
+  const {rasterBoxRuns,suggestedFields}=await import('./detect.js');
+  const width=350,height=90,data=new Uint8ClampedArray(width*height*4).fill(255);
+  for(let cell=0;cell<12;cell++){
+    const x=20+24*cell,gray=[5,7].includes(cell)?240:190;
+    const mark=(x,y)=>{const i=(y*width+x)*4;data[i]=data[i+1]=data[i+2]=gray;};
+    for(let dx=0;dx<=20;dx++){mark(x+dx,20);mark(x+dx,40);}
+    for(let dy=0;dy<=20;dy++){mark(x,20+dy);mark(x+20,20+dy);}
+  }
+  const fields=suggestedFields(rasterBoxRuns({width,height,data},2,2),0);
+  assert.equal(fields.length,1);assert.equal(fields[0].type,'boxes');assert.equal(fields[0].boxes.length,12);
+});
 test('repeated-start closed vector subpaths are detected before the next move',()=>{
   const path=[0,10,10,1,20,10,1,20,20,1,10,20,1,10,10,0,23,10,1,33,10,1,33,20,1,23,20,1,23,10];
   const runs=boxRuns({fnArray:[91],argsArray:[[20,[path],[10,10,33,20]]]},{constructPath:91},{transform:[1,0,0,-1,0,842]},[]);

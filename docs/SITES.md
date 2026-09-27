@@ -33,3 +33,5 @@ Validation for this migration: core/unit tests and Node-adapted document process
 ## Printed and scanned box detection
 
 When native fields are absent, printed vector box rows become editable suggested fields. If vector detection finds too few boxes, the browser renders a bounded page image and detects enclosed rectangular interiors. Scanned forms therefore no longer require drawing every box manually. The layout review opens before filling; labels on image-only pages are generic and must be checked, and missed or mistaken boxes can be corrected with the existing designer. Instructions pages remain unfilled. No OCR text, uploaded PDF or rendered user page is added to the build or repository.
+
+Faint scan borders are retained during image detection so continuous box rows are not split into short inputs or mistaken checkbox fields. A fictional regression covers a 12-cell row with faint cells; the supplied blank form was also checked in memory for complete phone rows and PDF character placement. User uploads and diagnostic renders are excluded from source.

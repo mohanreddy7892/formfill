@@ -57,7 +57,10 @@ export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
   const {width,height,data}=image,n=width*height;
   if(n>6000000)throw new Error('Detection image is too large.');
   const white=new Uint8Array(n),queue=new Uint32Array(n),boxes=[];
-  for(let i=0;i<n;i++)white[i]=(data[i*4]+data[i*4+1]+data[i*4+2])/3>225?1:0;
+  // Pale gray borders in scanned forms can exceed 225 after interpolation.
+  // Keep those borders closed; otherwise adjacent cells leak into the background
+  // and one real input is incorrectly split into shorter fields or checkboxes.
+  for(let i=0;i<n;i++)white[i]=(data[i*4]+data[i*4+1]+data[i*4+2])/3>245?1:0;
   for(let start=0;start<n;start++){
     if(!white[start])continue;
     let head=0,tail=1,minX=width,minY=height,maxX=0,maxY=0,touches=false;

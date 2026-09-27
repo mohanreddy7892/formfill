@@ -6,7 +6,7 @@ import { appendFields, groupBy, overlaps } from "../util.js";
 
 const MODES = [
   { id: "select", label: "Pick detected", tip: "Click amber boxes to select them, then make a field" },
-  { id: "text", label: "Draw text area", tip: "Drag a rectangle for free text" },
+  { id: "text", label: "Add text box", tip: "Tap to add a text box, or drag to choose its size" },
   { id: "boxes", label: "Draw box row", tip: "Drag across a row of character boxes" },
   { id: "checkbox", label: "Draw checkbox", tip: "Drag around a single tick box" },
 ];
@@ -22,6 +22,8 @@ export default function Designer({ formId, go }) {
   const [status, setStatus] = useState("");
   const [dirty, setDirty] = useState(false);
   const svgRef = useRef();
+  const gesture = useRef(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([api.template(formId), api.detect(formId)]).then(([t, d]) => { setTpl(t); setDet(d); })
@@ -73,34 +75,67 @@ export default function Designer({ formId, go }) {
     const q = p.matrixTransform(svg.getScreenCTM().inverse());
     return [q.x, q.y];
   };
-  const onDown = (e) => { if (mode === "select") return; const [x, y] = toPt(e); setDraft({ x0: x, y0: y, x1: x, y1: y }); };
-  const onMove = (e) => { if (!draft) return; const [x, y] = toPt(e); setDraft((d) => ({ ...d, x1: x, y1: y })); };
-  const onUp = () => {
-    if (!draft) return;
-    const r = [Math.min(draft.x0, draft.x1), Math.min(draft.y0, draft.y1), Math.max(draft.x0, draft.x1), Math.max(draft.y0, draft.y1)].map((v) => +v.toFixed(2));
-    setDraft(null);
-    if (r[2] - r[0] < 4 || r[3] - r[1] < 4) return;
-    if (mode === "text") addField({ type: "text", label: "Text", rect: r });
-    if (mode === "checkbox") addField({ type: "checkbox", label: "Checkbox", rect: r });
-    if (mode === "boxes") {
-      const n = Math.max(1, Math.round((r[2] - r[0]) / (r[3] - r[1])));
-      addField({ type: "boxes", label: "Boxes", boxes: split(r, n) });
+  const clampPt = (e) => { const [x,y] = toPt(e); const p = tpl.pages[page]; return [Math.max(0,Math.min(p.width,x)),Math.max(0,Math.min(p.height,y))]; };
+  const startEdit = (e, f, resize = false) => {
+    if (mode !== "select" || f.type !== "text" || e.button !== 0 || !e.isPrimary) return;
+    e.stopPropagation(); setActiveId(f.id);
+    gesture.current = { kind: resize ? "resize" : "move", id: f.id, rect: [...f.rect], start: clampPt(e), pointerId: e.pointerId };
+    svgRef.current.setPointerCapture(e.pointerId);
+  };
+  const onDown = (e) => {
+    if (mode === "select" || e.button !== 0 || !e.isPrimary) return;
+    const [x,y] = clampPt(e);
+    gesture.current = { kind: "draw", start: [x,y], pointerId: e.pointerId, client: [e.clientX,e.clientY] };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDraft({ x0:x, y0:y, x1:x, y1:y });
+  };
+  const onMove = (e) => {
+    const g = gesture.current; if (!g || g.pointerId !== e.pointerId) return;
+    const [x,y] = clampPt(e);
+    if (g.kind === "draw") setDraft({ x0:g.start[0],y0:g.start[1],x1:x,y1:y });
+    else {
+      const p=tpl.pages[page],r=g.rect; let next;
+      if(g.kind === "resize") next=[r[0],r[1],Math.min(p.width,Math.max(r[0]+4,x)),Math.min(p.height,Math.max(r[1]+4,y))];
+      else { const dx=Math.max(-r[0],Math.min(p.width-r[2],x-g.start[0])),dy=Math.max(-r[1],Math.min(p.height-r[3],y-g.start[1])); next=[r[0]+dx,r[1]+dy,r[2]+dx,r[3]+dy]; }
+      if(g.changed || next.some((v,i)=>Math.abs(v-r[i])>.1)) { g.changed=true; update(fs=>fs.map(f=>f.id===g.id?{...f,rect:next}:f)); }
     }
+  };
+  const onCancel = () => {
+    const g=gesture.current;
+    if(g?.changed) update(fs=>fs.map(f=>f.id===g.id?{...f,rect:g.rect}:f));
+    gesture.current=null; setDraft(null);
+  };
+  const onUp = (e) => {
+    const g=gesture.current; if(!g || g.pointerId!==e.pointerId) return;
+    if(g.kind!=="draw") { onMove(e); gesture.current=null; return; }
+    const [x,y]=clampPt(e),p=tpl.pages[page];
+    let r=[Math.min(g.start[0],x),Math.min(g.start[1],y),Math.max(g.start[0],x),Math.max(g.start[1],y)];
+    const tap=Math.hypot(e.clientX-g.client[0],e.clientY-g.client[1])<8;
+    if(mode==="text" && tap) { const w=Math.min(120,p.width),h=Math.min(20,p.height),left=Math.min(x,p.width-w),top=Math.min(y,p.height-h); r=[left,top,left+w,top+h]; }
+    gesture.current=null;setDraft(null);
+    if(r[2]-r[0]<4||r[3]-r[1]<4)return;
+    r=r.map(v=>+v.toFixed(2));
+    if(mode==="text") { addField({type:"text",label:"Text",rect:r});setMode("select");setStatus("Text box added. Drag it to move; drag its corner to resize."); }
+    if(mode==="checkbox") addField({type:"checkbox",label:"Checkbox",rect:r});
+    if(mode==="boxes") { const n=Math.max(1,Math.round((r[2]-r[0])/(r[3]-r[1]))); addField({type:"boxes",label:"Boxes",boxes:split(r,n)}); }
   };
 
   useEffect(() => {
     const onKey = (e) => {
       if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
-      if (e.key === "Escape") { setSel([]); setActiveId(null); }
+      if (e.key === "Escape") { onCancel(); setSel([]); setActiveId(null); setMode("select"); }
       if ((e.key === "Delete" || e.key === "Backspace") && activeId) { update((fs) => fs.filter((f) => f.id !== activeId)); setActiveId(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [activeId, update]);
 
-  async function save() {
-    try { const r = await api.saveTemplate(formId, tpl); setTpl((t) => ({ ...t, version: r.version })); setDirty(false); setStatus(window.__FORMFILL_DEMO__ ? "Saved (demo: until you reload)" : "Kept in this temporary session only"); }
+  async function save(andFill = false) {
+    if(saving) return;
+    setSaving(true);
+    try { const r = await api.saveTemplate(formId, tpl); setTpl((t) => ({ ...t, version: r.version })); setDirty(false); setStatus(window.__FORMFILL_DEMO__ ? "Saved (demo: until you reload)" : "Kept in this temporary session only"); if(andFill) go("fill",formId); }
     catch (e) { setStatus(e.message); }
+    finally { setSaving(false); }
   }
 
   if (!tpl || !det) return <p className="muted pad">{status || "Loading form…"}</p>;
@@ -112,19 +147,19 @@ export default function Designer({ formId, go }) {
         <input className="title-input" value={tpl.name} aria-label="Form name" onChange={(e) => { setTpl({ ...tpl, name: e.target.value }); setDirty(true); }} />
         <div className="seg" role="group" aria-label="Tool">
           {MODES.map((m) => (
-            <button key={m.id} className={mode === m.id ? "on" : ""} title={m.tip} onClick={() => { setMode(m.id); setSel([]); }}>{m.label}</button>
+            <button key={m.id} className={mode === m.id ? "on" : ""} title={m.tip} onClick={() => { onCancel(); setMode(m.id); setSel([]); setStatus(""); }}>{m.label}</button>
           ))}
         </div>
         <span className="spacer" />
         {status && <span className="status" role="status">{status}</span>}
-        <button className="btn" onClick={() => go("fill", formId)} disabled={dirty}>Try filling</button>
-        <button className="btn primary" onClick={save} disabled={!dirty}>Save layout</button>
+        <button className="btn" onClick={() => dirty ? save(true) : go("fill", formId)} disabled={saving}>{dirty ? "Apply & fill" : "Try filling"}</button>
+        <button className="btn primary" onClick={() => save()} disabled={!dirty || saving}>Save layout</button>
       </div>
 
       <div className="designer-body">
         <nav className="pages" aria-label="Pages">
           {tpl.pages.map((p, i) => (
-            <button key={i} className={i === page ? "on" : ""} onClick={() => { setPage(i); setSel([]); }}>
+            <button key={i} className={i === page ? "on" : ""} onClick={() => { onCancel(); setPage(i); setSel([]); setActiveId(null); }}>
               <PageThumb formId={formId} page={i} />
               <span>Page {i + 1} · {tpl.fields.filter((f) => f.page === i).length}</span>
             </button>
@@ -132,6 +167,8 @@ export default function Designer({ formId, go }) {
         </nav>
 
         <div className="canvas-wrap">
+          {mode === "text" && <div className="draw-help" role="status">Tap where your answer starts to add a text box. Or drag across the space to choose its size.</div>}
+          {mode === "select" && active?.type === "text" && <div className="draw-help">Drag the box to move it. Drag the blue corner to resize. Choose <strong>Apply &amp; fill</strong> when ready.</div>}
           {mode === "select" && sel.length > 0 && (
             <div className="selbar">
               <span>{sel.length} selected</span>
@@ -142,9 +179,9 @@ export default function Designer({ formId, go }) {
             </div>
           )}
           <PageCanvas formId={formId} page={page} info={info} className={`mode-${mode}`}
-            svgProps={{ ref: svgRef, onPointerDown: (e) => { if (mode !== "select") e.currentTarget.setPointerCapture(e.pointerId); onDown(e); }, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: () => setDraft(null) }}>
+            svgProps={{ ref: svgRef, onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onCancel }}>
             {tpl.fields.filter((f) => f.page === page).map((f) => (
-              <g key={f.id} className="field-hit" onClick={(e) => { if (mode === "select") { e.stopPropagation(); setActiveId(f.id); } }}>
+              <g key={f.id} className={`field-hit ${f.type === "text" && mode === "select" ? "movable-text" : ""}`} onPointerDown={(e) => startEdit(e,f)} onClick={(e) => { if (mode === "select") { e.stopPropagation(); setActiveId(f.id); } }}>
                 <Outline f={f} className={f.id === activeId ? "outline active" : "outline mapped"} />
               </g>
             ))}
@@ -156,13 +193,14 @@ export default function Designer({ formId, go }) {
                 <rect className="hit" {...rectOf(bounds(r.boxes))} />
               </g>
             ))}
+            {mode === "select" && active?.type === "text" && active.page === page && <rect className="resize-handle" x={active.rect[2]-7} y={active.rect[3]-7} width={14} height={14} rx={3} onPointerDown={(e)=>startEdit(e,active,true)}><title>Drag to resize text box</title></rect>}
             {draft && <rect className="draft" x={Math.min(draft.x0, draft.x1)} y={Math.min(draft.y0, draft.y1)} width={Math.abs(draft.x1 - draft.x0)} height={Math.abs(draft.y1 - draft.y0)} />}
           </PageCanvas>
         </div>
 
         <aside className="inspector">
-          {tpl.review_layout && <p className="hint-box" role="status">{tpl.fields.length} fields suggested from printed boxes. Select an outline to review its label and position. Rename fields as needed, save any changes, then choose Try filling. Detection can miss or misidentify boxes.</p>}
-          {active ? <Inspector f={active} update={update} setActiveId={setActiveId} existing={tpl.fields} /> : (
+          {tpl.review_layout && <p className="hint-box" role="status">{tpl.fields.length} fields suggested from printed areas. Select an outline to review its label and position. Rename fields as needed, save any changes, then choose Try filling. Detection can miss or misidentify boxes.</p>}
+          {active ? <Inspector f={active} info={tpl.pages[active.page]} update={update} setActiveId={setActiveId} existing={tpl.fields} /> : (
             <div className="hint-box">
               <p><strong>Map this form</strong></p>
               <p>Amber outlines are boxes found on the page. Select one row (or several), then choose what it is. Use the draw tools for anything that wasn't found, including scanned forms.</p>
@@ -185,7 +223,7 @@ function split(r, n) {
   return Array.from({ length: n }, (_, i) => [+(r[0] + i * w).toFixed(2), r[1], +(r[0] + (i + 1) * w).toFixed(2), r[3]]);
 }
 
-function Inspector({ f, update, setActiveId, existing }) {
+function Inspector({ f, info, update, setActiveId, existing }) {
   const set = (patch) => update((fs) => fs.map((x) => (x.id === f.id ? { ...x, ...patch } : x)));
   const groups = [...new Set(existing.map((x) => x.group))];
   const renameId = (v) => {
@@ -200,6 +238,10 @@ function Inspector({ f, update, setActiveId, existing }) {
         <button className="btn ghost danger" onClick={() => { update((fs) => fs.filter((x) => x.id !== f.id)); setActiveId(null); }}>Delete field</button>
       </div>
       <label>Label<input value={f.label} onChange={(e) => set({ label: e.target.value })} /></label>
+      {f.type === "text" && <div className="text-box-size">
+        <label>Width<input type="number" min="4" max={info.width-f.rect[0]} step="1" value={Math.round(f.rect[2]-f.rect[0])} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isFinite(n)&&n>=4)set({rect:[f.rect[0],f.rect[1],Math.min(info.width,f.rect[0]+n),f.rect[3]]});}} /></label>
+        <label>Height<input type="number" min="4" max={info.height-f.rect[1]} step="1" value={Math.round(f.rect[3]-f.rect[1])} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isFinite(n)&&n>=4)set({rect:[f.rect[0],f.rect[1],f.rect[2],Math.min(info.height,f.rect[1]+n)]});}} /></label>
+      </div>}
       <label>Key in data files<input value={f.id} onChange={(e) => renameId(e.target.value)} /></label>
       <label>Section
         <input list="groups" value={f.group} onChange={(e) => set({ group: e.target.value })} />

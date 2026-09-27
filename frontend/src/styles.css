@@ -236,3 +236,12 @@ dialog.docs::backdrop { background: rgba(31, 39, 51, 0.45); }
 .mode-text svg, .mode-boxes svg, .mode-checkbox svg { touch-action: none; }
 
 .field textarea { resize: vertical; min-height: 5rem; }
+
+/* Text boxes can be placed with one tap, then moved and resized. */
+.draw-help { position: sticky; top: 0; z-index: 2; max-width: 1000px; margin: 0 auto 12px; padding: 10px 12px; border-radius: 6px; background: var(--ink-soft); color: var(--ink); font-size: 14px; }
+.movable-text { touch-action: none; cursor: move; }
+.movable-text .outline { cursor: move !important; }
+.resize-handle { fill: var(--ink); stroke: #fff; stroke-width: 2; cursor: nwse-resize; touch-action: none; }
+.text-box-size { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.text-box-size input { width: 100%; min-width: 0; }
+@media(max-width:700px) { .designer .seg { flex-wrap: wrap; } .designer .seg button { min-height: 44px; } }

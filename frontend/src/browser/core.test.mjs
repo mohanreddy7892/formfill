@@ -71,3 +71,47 @@ test('vector and raster detections do not duplicate the same cells',async()=>{
     [{kind:'boxes',boxes:[[10.5,10.5,19.5,19.5],[23.5,10.5,32.5,19.5],[36,10,46,20]]}]);
   assert.equal(runs.length,1);assert.equal(runs[0].boxes.length,3);
 });
+
+test('tall answer columns split at colon markers',async()=>{
+  const {rasterBoxRuns,suggestedFields}=await import('./detect.js');
+  const width=400,height=400,data=new Uint8ClampedArray(width*height*4).fill(255);
+  const ink=(x,y)=>{const p=(y*width+x)*4;data[p]=data[p+1]=data[p+2]=0;};
+  for(let x=40;x<=300;x++){ink(x,20);ink(x,350);}
+  for(let y=20;y<=350;y++){ink(40,y);ink(300,y);}
+  for(const y of [40,160]){for(const dy of [0,5])for(let x=45;x<=46;x++)for(let z=y+dy;z<=y+dy+1;z++)ink(x,z);}
+  const fields=suggestedFields(rasterBoxRuns({width,height,data},2,2),0);
+  assert.equal(fields.length,2);assert.ok(fields.every(f=>f.type==='text'));
+  assert.ok(fields[0].rect[3]<=fields[1].rect[1]);
+  assert.ok(fields[0].rect[0]>23);
+});
+test('dotted answer runs become text fields, isolated punctuation does not',async()=>{
+  const {dottedAreas}=await import('./detect.js');
+  const marks=Array.from({length:12},(_,i)=>[20+i*2,30,20+i*2+.5,30.5]);
+  const rects=dottedAreas([...marks,[80,30,80.5,30.5],[90,30,90.5,30.5]]);
+  assert.equal(rects.length,1);assert.ok(rects[0][3]<30.5);
+});
+test('printed heading fragments cannot become checkboxes',async()=>{
+  const {mergeDetectedRuns}=await import('./detect.js');
+  const result=mergeDetectedRuns([],[{kind:'checkbox',boxes:[[10,10,16,17]]}],
+    [{x:6,y:7,width:7,height:10},{x:13,y:7,width:8,height:10}]);
+  assert.deepEqual(result,[]);
+});
+test('tall text wraps within bounds and rejects overflow',async()=>{
+  const {fitTextLines}=await import('./pdf.js');
+  const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.HelveticaBold);
+  const text='TEST PERSON\nENGINEER AT EXAMPLE OFFICE';
+  const layout=fitTextLines(text,font,85,40);
+  assert.ok(layout.lines.length>=2);
+  assert.ok(layout.lines.every(line=>font.widthOfTextAtSize(line,layout.size)<=85));
+  assert.ok(layout.lines.length*layout.lineHeight<=40);
+  assert.throws(()=>fitTextLines('TOO MUCH TEXT '.repeat(100),font,40,25),/does not fit/);
+  doc.addPage([595,842]);
+  const bytes=await fillPdf(await doc.save(),{pages:tpl.pages,fields:[{...tpl.fields[0],rect:[30,40,119,84]}]}, {name:text});
+  assert.equal((await PDFDocument.load(bytes)).getPageCount(),1);
+});
+test('small printed placeholders do not remove real character boxes',async()=>{
+  const {mergeDetectedRuns}=await import('./detect.js');
+  const boxes=[[10,10,20,20],[23,10,33,20]];
+  const runs=mergeDetectedRuns([{kind:'boxes',boxes}],[],[{x:9,y:12,width:26,height:6,text:'NAME'}]);
+  assert.equal(runs[0].boxes.length,2);
+});

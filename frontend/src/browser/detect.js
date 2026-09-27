@@ -89,9 +89,56 @@ export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
     const density=tail/((maxX-minX+1)*(maxY-minY+1));
     const rect=[(minX-.5)/scaleX,(minY-.5)/scaleY,(maxX+1.5)/scaleX,(maxY+1.5)/scaleY];
     if(!touches && w>=5 && w<=18 && h>=5 && h<=18 && w/h>.6 && w/h<1.7 && density>.65)boxes.push(rect);
-    else if(!touches && w>18 && w<=520 && h>=5 && h<=16 && w/h>=1.8 && density>.985)textAreas.push(rect);
+    else if(!touches && w>30 && w<=520 && h>=5 && h<=350 && w/h>=.2 && density>.985)textAreas.push(rect);
   }
-  return [...groupBoxes(boxes,words),...textAreas.map((rect,i)=>({id:`t${i}`,boxes:[rect],kind:'text',label:words.filter(w=>Math.abs(w.y-rect[1])<8&&w.x+w.width<=rect[0]+2&&rect[0]-w.x<140).map(w=>w.text).join(' ').slice(-60)}))];
+  const marks=smallInkMarks(image,scaleX,scaleY,white,queue);
+  const areas=textAreas.flatMap(rect=>{
+    // A merged answer column may contain several colon-prefixed answers.
+    const edge=marks.filter(m=>m[0]>=rect[0]&&m[2]<=rect[0]+7&&m[1]>rect[1]&&m[3]<rect[3]);
+    const colons=[];
+    for(let i=0;i<edge.length;i++)for(let j=i+1;j<edge.length;j++){
+      const a=edge[i],b=edge[j],dy=b[1]-a[1];
+      if(Math.abs(a[0]-b[0])<.8&&dy>=1.5&&dy<=4.5&&a[2]-a[0]<2&&b[2]-b[0]<2){colons.push(a[1]);break;}
+    }
+    const starts=[...new Set(colons.map(y=>Math.round(y)))].sort((a,b)=>a-b).filter((y,i,ys)=>!i||y-ys[i-1]>5);
+    if(!starts.length)return [rect];
+    return starts.map((y,i)=>[rect[0]+7,Math.max(rect[1],y-3),rect[2],Math.min(rect[3],i+1<starts.length?starts[i+1]-3:rect[3])]).filter(r=>r[3]-r[1]>=5);
+  });
+  const dotted=dottedAreas(marks).filter(r=>!areas.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1]));
+  return [...groupBoxes(boxes.filter(b=>!insidePrintedWord(b,words)),words),...[...areas,...dotted].map((rect,i)=>({id:`t${i}`,boxes:[rect],kind:'text',label:words.filter(w=>Math.abs(w.y-rect[1])<8&&w.x+w.width<=rect[0]+2&&rect[0]-w.x<140).map(w=>w.text).join(' ').slice(-60)}))];
+}
+
+// Tiny connected ink marks identify dotted blanks and colon-prefixed answers.
+// Reuse the bounded raster buffers; neither pixels nor text leave the session.
+function smallInkMarks(image,sx,sy,mask,queue) {
+  const {width,height,data}=image,n=width*height,marks=[];
+  for(let i=0;i<n;i++)mask[i]=(data[i*4]+data[i*4+1]+data[i*4+2])/3<210?1:0;
+  for(let start=0;start<n;start++){
+    if(!mask[start])continue;
+    let head=0,tail=1,x0=width,y0=height,x1=0,y1=0;queue[0]=start;mask[start]=0;
+    while(head<tail){
+      const p=queue[head++],x=p%width,y=(p/width)|0;
+      x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);
+      if(x>0&&mask[p-1]){mask[p-1]=0;queue[tail++]=p-1;}
+      if(x+1<width&&mask[p+1]){mask[p+1]=0;queue[tail++]=p+1;}
+      if(y>0&&mask[p-width]){mask[p-width]=0;queue[tail++]=p-width;}
+      if(y+1<height&&mask[p+width]){mask[p+width]=0;queue[tail++]=p+width;}
+    }
+    const w=(x1-x0+1)/sx,h=(y1-y0+1)/sy;
+    if(marks.length<10000&&w<=4.5&&h<=2&&w>=.2&&h>=.2)marks.push([x0/sx,y0/sy,(x1+1)/sx,(y1+1)/sy]);
+  }
+  return marks.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+}
+export function dottedAreas(marks) {
+  const rows=[];
+  for(const m of marks){const row=rows.find(r=>Math.abs(r[0][3]-m[3])<.8);row?row.push(m):rows.push([m]);}
+  const areas=[];
+  for(const row of rows){
+    row.sort((a,b)=>a[0]-b[0]);let run=[];
+    const finish=()=>{if(run.length>=6&&run.at(-1)[2]-run[0][0]>=15){const y=Math.max(...run.map(m=>m[3]));areas.push([run[0][0],y-9,run.at(-1)[2],y-1]);}run=[];};
+    for(const m of row){if(run.length&&(m[0]-run.at(-1)[2]>5||m[0]<run.at(-1)[2]))finish();run.push(m);}finish();
+  }
+  return areas;
 }
 
 export function isInstructionPage(words) {
@@ -103,11 +150,19 @@ export function mergeDetectedRuns(vector,raster,words=[]) {
   const boxes=vector.filter(r=>r.kind!=='text').flatMap(r=>r.boxes);
   for(const box of raster.filter(r=>r.kind!=='text').flatMap(r=>r.boxes))
     if(!boxes.some(v=>v.every((x,i)=>Math.abs(x-box[i])<1.8)))boxes.push(box);
-  return [...groupBoxes(boxes,words),...raster.filter(r=>r.kind==='text')];
+  return [...groupBoxes(boxes.filter(b=>!insidePrintedWord(b,words)),words),...raster.filter(r=>r.kind==='text')];
 }
 
+const insidePrintedWord=(b,words)=>{
+  const overlapping=words.filter(w=>(w.height||10)>=10&&(w.height||10)>(b[3]-b[1])*1.25&&Math.min(w.y+(w.height||10),b[3])-Math.max(w.y,b[1])>(b[3]-b[1])*.5&&w.x<b[2]&&w.x+w.width>b[0]);
+  const covered=overlapping.reduce((n,w)=>n+Math.min(w.x+w.width,b[2])-Math.max(w.x,b[0]),0);
+  return covered>(b[2]-b[0])*.9&&overlapping.some(w=>w.x<b[0]-.5||w.x+w.width>b[2]+.5);
+};
+
+const cleanLabel=s=>s&&!/[\x00-\x1f\ufffd]/.test(s)?s:'';
+
 export function suggestedFields(runs,page) {
-  return runs.map((run,i)=>({id:`detected_${page}_${i}`,page,group:`Page ${page+1}`,label:run.label||`Field ${i+1}`,
+  return runs.map((run,i)=>({id:`detected_${page}_${i}`,page,group:`Page ${page+1}`,label:cleanLabel(run.label)||`Field ${i+1}`,
     type:run.kind==='text'?'text':run.boxes.length>1?'boxes':'checkbox',boxes:run.kind!=='text'&&run.boxes.length>1?run.boxes:[],rect:run.boxes.length===1?run.boxes[0]:null,
     options:[],upper:true,align:'left',clear:false,multi:false,hint:'Suggested from printed areas. Check its label and position before filling.'}));
 }

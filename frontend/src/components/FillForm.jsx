@@ -130,7 +130,9 @@ function Input({ f, v, auto, set, onFocus, active }) {
       </div>
     );
   } else if (f.type === "text" || f.type === "acro") {
-    control = <input {...common} value={v ?? ""} placeholder={auto ? `auto: ${auto}` : undefined} className={f.upper !== false ? "caps" : ""} onChange={(e) => set(f.id, e.target.value)} />;
+    const props = { ...common, value: v ?? "", autoComplete: "off", placeholder: auto ? `auto: ${auto}` : undefined, className: f.upper !== false ? "caps" : "", onChange: (e) => set(f.id, e.target.value) };
+    control = f.type === "text" && f.rect && f.rect[3] - f.rect[1] > 20
+      ? <textarea {...props} rows={3} /> : <input {...props} />;
   } else if (f.type === "checkbox") {
     control = <input {...common} type="checkbox" checked={!!v} onChange={(e) => set(f.id, e.target.checked)} />;
   } else if (f.type === "choice") {

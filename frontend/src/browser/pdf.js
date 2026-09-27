@@ -18,6 +18,23 @@ export function checkedValues(tpl, values) {
   if(errors.length) throw new Error(errors.join(' · '));
   return v;
 }
+export function fitTextLines(text,font,width,height,initialSize=8) {
+  for(let size=initialSize;size>=4.5;size-=.25){
+    const lines=[];let tooWide=false;
+    for(const paragraph of text.split(/\r?\n/)){
+      let line='';
+      for(const word of paragraph.split(/\s+/).filter(Boolean)){
+        if(font.widthOfTextAtSize(word,size)>width){tooWide=true;break;}
+        const candidate=line?`${line} ${word}`:word;
+        if(font.widthOfTextAtSize(candidate,size)>width){lines.push(line);line=word;}else line=candidate;
+      }
+      lines.push(line);if(tooWide)break;
+    }
+    if(!tooWide&&lines.length*size*1.2<=height)return {lines,size,lineHeight:size*1.2};
+  }
+  throw new Error('text does not fit. Shorten it or enlarge its field.');
+}
+
 export async function fillPdf(bytes,tpl,values) {
   const v=checkedValues(tpl,values);
   const doc=await PDFDocument.load(bytes,{updateMetadata:false});
@@ -51,6 +68,13 @@ export async function fillPdf(bytes,tpl,values) {
       [...s].forEach((ch,i)=>{const r=boxes[i],w=r[2]-r[0],h=r[3]-r[1];if(f.clear)white([r[0]+.8,r[1]+.8,r[2]-.8,r[3]-.8]);draw(ch,(r[0]+r[2])/2,r[1]+h*.78,f.size||Math.max(5,Math.min(h*.78,w*.95)),true);});
     } else if(f.type==='text'||f.type==='acro') {
       const r=f.rect,s=f.upper===false?String(value):String(value).toUpperCase();
+      if(f.type==='text'&&r[3]-r[1]>20){
+        let layout;try{layout=fitTextLines(s,font,r[2]-r[0]-4,r[3]-r[1]-4,f.size||8);}
+        catch(error){throw new Error(`${f.label}: ${error.message}`);}
+        if(f.clear)white(r);
+        layout.lines.forEach((line,i)=>draw(line,f.align==='right'?r[2]-2-font.widthOfTextAtSize(line,layout.size):r[0]+2,r[1]+2+layout.size+i*layout.lineHeight,layout.size));
+        page.pushOperators(popGraphicsState());continue;
+      }
       let size=f.size||Math.min(8,(r[3]-r[1])*.75),width;
       try {while(size>4.5 && font.widthOfTextAtSize(s,size)>r[2]-r[0]-4)size-=.25;width=font.widthOfTextAtSize(s,size);}
       catch {throw new Error(`${f.label}: use Latin characters for this PDF font.`);}

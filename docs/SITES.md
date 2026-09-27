@@ -37,3 +37,9 @@ When native fields are absent, printed vector box rows become editable suggested
 Faint scan borders are retained during image detection so continuous box rows are not split into short inputs or mistaken checkbox fields. A fictional regression covers a 12-cell row with faint cells; the supplied blank form was also checked in memory for complete phone rows and PDF character placement. User uploads and diagnostic renders are excluded from source.
 
 Full-form verification on the supplied blank four-page form checks every suggested character/tick/text value against its exported position. Instruction headings exclude guidance-table blank cells. Suggestions still require review: image-only labels, isolated cells, signatures and unboxed areas are not semantically recognized. Tests use fictional values; no supplied document or diagnostic image is committed.
+
+## Table cells and dotted answers
+
+Detection includes tall blank table cells, splits shared answer columns at colon markers, and finds repeated dotted answer lines. Printed heading fragments are excluded from checkbox suggestions. Tall text fields accept multiple lines and wrap within the exported rectangle; overflow is blocked rather than clipped. Invalid PDF text encodings fall back to numbered labels instead of displaying broken text.
+
+The blank four-page MED.97 form was checked with fictional values: 94 suggested text fields exported inside their detected rectangles (28, 8, 28 and 30 by page). These are geometry suggestions, not proof that every question was understood. Short/dashed blanks, signatures, labels and grouping still require layout review. Processing stays in the existing bounded browser session without persistence.

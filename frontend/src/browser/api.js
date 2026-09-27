@@ -45,7 +45,7 @@ async function canvasFor(page,g,scale=1.5){
   catch(e){canvas.width=canvas.height=0;throw e;}
 }
 const blobOf=canvas=>new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Could not render this page.')),'image/png'));
-function textItems(content,viewport){return content.items.filter(x=>x.str).map(x=>{const t=pdfjs.Util.transform(viewport.transform,x.transform);return {text:x.str,x:t[4],y:t[5]-Math.hypot(t[2],t[3]),width:x.width,eol:x.hasEOL};});}
+function textItems(content,viewport){return content.items.filter(x=>x.str).map(x=>{const t=pdfjs.Util.transform(viewport.transform,x.transform);return {text:x.str,x:t[4],y:t[5]-Math.hypot(t[2],t[3]),width:x.width,height:Math.hypot(t[2],t[3]),eol:x.hasEOL};});}
 function linesOf(items){return items.map(x=>x.text+(x.eol?'\n':' ')).join('');}
 
 async function upload(file){return operation(async g=>{

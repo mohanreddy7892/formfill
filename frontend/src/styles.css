@@ -245,3 +245,9 @@ dialog.docs::backdrop { background: rgba(31, 39, 51, 0.45); }
 .text-box-size { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .text-box-size input { width: 100%; min-width: 0; }
 @media(max-width:700px) { .designer .seg { flex-wrap: wrap; } .designer .seg button { min-height: 44px; } }
+
+/* Keep the native upload control visible and directly tappable. */
+.file-picker { display: block; width: min(100%, 360px); min-height: 48px; margin-top: 14px; font-size: 16px; color: var(--slate); }
+.file-picker::file-selector-button { min-height: 44px; margin-right: 10px; padding: 10px 16px; border: 1px solid var(--ink); border-radius: 6px; background: var(--ink); color: #fff; font: inherit; cursor: pointer; }
+.file-picker:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.file-picker:disabled { opacity: .6; }

@@ -92,11 +92,12 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
       </header>
 
       <div className="docs-body">
-        <label className="dropzone small" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(e.dataTransfer.files); }}>
-          <input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" hidden onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+        <div className="dropzone small" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(e.dataTransfer.files); }}>
           <span className="dropzone-title">Add bills, reports, discharge summary, cheque, ID…</span>
           <span className="dropzone-sub">Photos or PDFs · {features?.ocr ? "bills are read automatically" : "automatic reading unavailable"}</span>
-        </label>
+          <input className="file-picker" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" aria-label="Choose supporting documents" disabled={!!busy}
+            onChange={(e) => { const files = Array.from(e.currentTarget.files || []); if (!files.length) return; e.currentTarget.value = ""; add(files); }} />
+        </div>
 
         {window.__FORMFILL_DEMO__ && docs.length === 0 && (
           <button className="btn sample-btn" onClick={() => add(window.__FORMFILL_DEMO__.sampleFiles())}>

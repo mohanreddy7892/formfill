@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api.js";
 
 export default function Library({ go }) {
@@ -6,13 +6,12 @@ export default function Library({ go }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [drag, setDrag] = useState(false);
-  const input = useRef();
 
   const load = () => api.templates().then(setItems).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
 
   async function upload(file) {
-    if (!file) return;
+    if (!file || busy) return;
     setError(""); setBusy(true);
     try {
       const r = await api.upload(file);
@@ -33,16 +32,17 @@ export default function Library({ go }) {
         <p>Choose a form, fill it, and download the result. Your documents stay in this browser tab. Forms and layouts expire after 15 minutes; use Clear session when finished.</p>
       </div>
 
-      <label
+      <div
         className={`dropzone ${drag ? "is-drag" : ""}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files[0]); }}
       >
-        <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const file = e.target.files[0]; e.target.value = ""; upload(file); }} />
         <span className="dropzone-title">{busy ? "Reading the form…" : "Drop a blank PDF form here"}</span>
-        <span className="dropzone-sub">or <u>choose a file</u> · up to 20 MB and 40 pages</span>
-      </label>
+        <span className="dropzone-sub">Choose a PDF · up to 20 MB and 40 pages</span>
+        <input className="file-picker" type="file" accept=".pdf,application/pdf" aria-label="Choose a blank PDF form" disabled={busy}
+          onChange={(e) => { const file = e.currentTarget.files?.[0]; if (!file) return; e.currentTarget.value = ""; upload(file); }} />
+      </div>
       {error && <p className="error" role="alert">{error}</p>}
 
       <h2 className="section-title">Forms in this temporary session</h2>

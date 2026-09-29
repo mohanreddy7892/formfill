@@ -2,6 +2,8 @@
 // Uses PDF coordinates from the displayed page, including rotation and cropped pages.
 import {PDFDocument, StandardFonts, rgb, pushGraphicsState, popGraphicsState, concatTransformationMatrix} from 'pdf-lib';
 import {check,computedValues} from '../demo/rules.js';
+import {boxCharacters,textFieldLayout} from './text-layout.js';
+export {fitTextLines} from './text-layout.js';
 
 const truthy=v=>v===true || /^(1|true|yes|y|on|x|checked)$/i.test(String(v));
 export function checkedValues(tpl, values) {
@@ -9,7 +11,7 @@ export function checkedValues(tpl, values) {
   const errors=check(tpl,v).filter(i=>i.severity==='error').map(i=>i.message);
   for (const f of tpl.fields) {
     const value=v[f.id]; if(value==null || value==='' || (Array.isArray(value)&&!value.length)) continue;
-    if (f.type==='boxes' && String(value).length>f.boxes.length) errors.push(`${f.label}: too many characters for the boxes.`);
+    if (f.type==='boxes' && boxCharacters(f,value).length>f.boxes.length) errors.push(`${f.label}: too many characters for the boxes.`);
     if (f.type==='choice') {
       const chosen=[...new Set((Array.isArray(value)?value:[value]).map(x=>String(x).toUpperCase()))];
       if ((!f.multi && chosen.length>1) || chosen.some(x=>!f.options.some(o=>o.value.toUpperCase()===x))) errors.push(`${f.label}: choose a valid option.`);
@@ -18,22 +20,6 @@ export function checkedValues(tpl, values) {
   if(errors.length) throw new Error(errors.join(' · '));
   return v;
 }
-export function fitTextLines(text,font,width,height,initialSize=8) {
-  for(let size=initialSize;size>=4.5;size-=.25){
-    const lines=[];let tooWide=false;
-    for(const paragraph of text.split(/\r?\n/)){
-      let line='';
-      for(const word of paragraph.split(/\s+/).filter(Boolean)){
-        if(font.widthOfTextAtSize(word,size)>width){tooWide=true;break;}
-        const candidate=line?`${line} ${word}`:word;
-        if(font.widthOfTextAtSize(candidate,size)>width){lines.push(line);line=word;}else line=candidate;
-      }
-      lines.push(line);if(tooWide)break;
-    }
-    if(!tooWide&&lines.length*size*1.2<=height)return {lines,size,lineHeight:size*1.2};
-  }
-  throw new Error('text does not fit. Shorten it or enlarge its field.');
-}
 
 export async function fillPdf(bytes,tpl,values) {
   const v=checkedValues(tpl,values);
@@ -41,15 +27,16 @@ export async function fillPdf(bytes,tpl,values) {
   const font=await doc.embedFont(StandardFonts.HelveticaBold);
   const form=doc.getForm(), pages=doc.getPages();
   for(const f of tpl.fields) {
-    const value=v[f.id]; if(value==null || value==='' || (Array.isArray(value)&&!value.length)) continue;
+    const value=v[f.id],empty=value==null || value==='' || (Array.isArray(value)&&!value.length);
     if(f.acro_name) {
       const native=form.getField(f.acro_name);
-      if(native.setText) native.setText(String(value));
+      if(native.setText) native.setText(empty?'':String(value));
       else if(native.check) truthy(value)?native.check():native.uncheck();
-      else if(native.select) native.select(value);
+      else if(native.select) { if(empty) native.clear(); else native.select(value); }
       else throw new Error('This PDF field cannot be filled. Map it as a text area instead.');
       continue;
     }
+    if(empty)continue;
     const page=pages[f.page], info=tpl.pages[f.page], height=info.height;
     const t=info.transform || [1,0,0,-1,0,height];
     const [a,b,c,d,e,g]=t, determinant=a*d-b*c;
@@ -64,23 +51,14 @@ export async function fillPdf(bytes,tpl,values) {
     };
     const tick=r=>draw('X',(r[0]+r[2])/2,r[1]+(r[3]-r[1])*.82,Math.max(5.5,Math.min(9,(r[3]-r[1])*.95)),true);
     if(f.type==='boxes') {
-      const s=f.upper===false?String(value):String(value).toUpperCase(), boxes=f.align==='right'?f.boxes.slice(f.boxes.length-s.length):f.boxes;
+      const s=boxCharacters(f,value), boxes=f.align==='right'?f.boxes.slice(f.boxes.length-s.length):f.boxes;
       [...s].forEach((ch,i)=>{const r=boxes[i],w=r[2]-r[0],h=r[3]-r[1];if(f.clear)white([r[0]+.8,r[1]+.8,r[2]-.8,r[3]-.8]);draw(ch,(r[0]+r[2])/2,r[1]+h*.78,f.size||Math.max(5,Math.min(h*.78,w*.95)),true);});
     } else if(f.type==='text'||f.type==='acro') {
-      const r=f.rect,s=f.upper===false?String(value):String(value).toUpperCase();
-      if(f.type==='text'&&r[3]-r[1]>20){
-        let layout;try{layout=fitTextLines(s,font,r[2]-r[0]-4,r[3]-r[1]-4,f.size||8);}
-        catch(error){throw new Error(`${f.label}: ${error.message}`);}
-        if(f.clear)white(r);
-        layout.lines.forEach((line,i)=>draw(line,f.align==='right'?r[2]-2-font.widthOfTextAtSize(line,layout.size):r[0]+2,r[1]+2+layout.size+i*layout.lineHeight,layout.size));
-        page.pushOperators(popGraphicsState());continue;
-      }
-      let size=f.size||Math.min(8,(r[3]-r[1])*.75),width;
-      try {while(size>4.5 && font.widthOfTextAtSize(s,size)>r[2]-r[0]-4)size-=.25;width=font.widthOfTextAtSize(s,size);}
-      catch {throw new Error(`${f.label}: use Latin characters for this PDF font.`);}
-      if(width>r[2]-r[0]-4) throw new Error(`${f.label}: text does not fit. Shorten it or enlarge its field.`);
-      if(f.clear)white(r);
-      draw(s,f.align==='right'?r[2]-2-width:r[0]+2,r[3]-(r[3]-r[1]-size)/2-size*.18,size);
+      let layout;
+      try { layout=textFieldLayout(f,value,font); }
+      catch(error){throw new Error(`${f.label}: ${error.message}`);}
+      if(f.clear)white(f.rect);
+      layout.forEach(line=>draw(line.text,line.x,line.baseline,line.size));
     } else if(f.type==='checkbox' && truthy(value))tick(f.rect);
     else if(f.type==='choice') {
       const chosen=(Array.isArray(value)?value:[value]).map(x=>String(x).toUpperCase());

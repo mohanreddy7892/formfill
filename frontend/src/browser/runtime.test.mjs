@@ -27,8 +27,8 @@ await build({entryPoints:[`${root}/src/browser/api.js`],outfile:runtime,bundle:t
 const {api,clearSession}=await import('./.runtime-api.mjs');
 async function fixture(){const doc=await PDFDocument.create(),page=doc.addPage([595,842]);page.drawText('FICTIONAL TEST FORM',{x:40,y:795,size:18});const f=doc.getForm().createTextField('Patient');f.addToPage(page,{x:155,y:745,width:280,height:22});for(let i=0;i<8;i++)page.drawRectangle({x:155+i*13,y:665,width:10,height:10,borderWidth:.5,borderColor:rgb(0,0,0)});return new File([await doc.save()],'fictional.pdf',{type:'application/pdf'});}
 test('browser session: detect, render, fill, scan, pack and clear',async()=>{
- const file=await fixture(),r=await api.upload(file);assert.equal(r.fields,1);
- const tpl=await api.template(r.form_id);const detected=await api.detect(r.form_id);assert.ok(detected.pages[0].runs.some(r=>r.boxes.length===8));
+ const file=await fixture(),r=await api.upload(file);assert.equal(r.fields,2);
+ const tpl=await api.template(r.form_id);assert.equal(tpl.fields.filter(f=>f.acro_name).length,1);assert.equal(tpl.fields.find(f=>f.type==='boxes').boxes.length,8);const detected=await api.detect(r.form_id);assert.ok(detected.pages[0].runs.some(r=>r.boxes.length===8));
  const preview=await api.pageImage(r.form_id,0);assert.ok(preview.startsWith('blob:'));
  const filled=await api.fill(r.form_id,{[tpl.fields[0].id]:'TEST PERSON'});assert.equal((await PDFDocument.load(await filled.arrayBuffer())).getPageCount(),1);
  const canvas=createCanvas(1500,700),ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1500,700);ctx.fillStyle='black';ctx.font='42px sans-serif';
@@ -47,5 +47,32 @@ test('page labels use local OCR and do not read entered answers as labels',async
  const labels=await api.suggestLabels(r.form_id,0,[{id:'answer',page:0,type:'text',rect:[200,82,350,112]}]);
  assert.match(labels.answer,/name/i);await clearSession();assert.equal((await api.templates()).length,0);
  console.log('Local page-label OCR passed; session cleared.');
+});
+test('blank native answers remove pre-existing text and selected options from export',async()=>{
+ const doc=await PDFDocument.create(),page=doc.addPage([595,842]),form=doc.getForm();
+ const text=form.createTextField('Name');text.setText('OLD FICTIONAL NAME');text.addToPage(page,{x:40,y:700,width:200,height:25});
+ const choice=form.createDropdown('Office');choice.addOptions(['OLD OFFICE','NEW OFFICE']);choice.select('OLD OFFICE');choice.addToPage(page,{x:40,y:640,width:200,height:25});
+ const radio=form.createRadioGroup('Answer');radio.addOptionToPage('Yes',page,{x:40,y:590,width:15,height:15});radio.select('Yes');
+ const check=form.createCheckBox('Check');check.addToPage(page,{x:90,y:590,width:15,height:15});check.check();
+ const r=await api.upload(new File([await doc.save()],'fictional-native.pdf',{type:'application/pdf'}));
+ const template=await api.template(r.form_id);
+ const values=Object.fromEntries(template.fields.map(f=>[f.id,f.type==='checkbox'?false:'']));
+ for(const input of [values,{}]){
+   const blob=await api.fill(r.form_id,input);
+   const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+   const task=pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer()),useSystemFonts:true});
+   try{const out=await task.promise;const printed=(await (await out.getPage(1)).getTextContent()).items.map(x=>x.str).join(' ');assert.doesNotMatch(printed,/OLD FICTIONAL NAME|OLD OFFICE/);}
+   finally{await task.destroy();}
+ }
+ await clearSession();console.log('Native clear: old name and dropdown selection absent from PDF.');
+});
+test('image-only colon forms use OCR geometry to protect printed choices',async()=>{
+ const canvas=createCanvas(1200,1600),ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1200,1600);ctx.fillStyle='black';ctx.font='24px sans-serif';
+ for(let i=0;i<6;i++){const y=200+i*100;ctx.fillRect(640,y,2,2);ctx.fillRect(640,y+6,2,2);ctx.fillText('Yes / No',800,y+10);ctx.fillText('Question '+(i+1),100,y+10);}
+ const doc=await PDFDocument.create(),page=doc.addPage([600,800]);const image=await doc.embedPng(canvas.toBuffer('image/png'));page.drawImage(image,{x:0,y:0,width:600,height:800});
+ const r=await api.upload(new File([await doc.save()],'fictional-scan.pdf',{type:'application/pdf'}));
+ const detected=await api.detect(r.form_id),open=detected.pages[0].runs.filter(r=>r.source==='open-answer');
+ assert.equal(open.length,6);assert.ok(open.every(r=>r.boxes[0][2]<400),JSON.stringify(open.map(r=>r.boxes[0])));
+ await clearSession();console.log('Scanned choices: all 6 answer areas stop before printed Yes / No.');
 });
 test.after(async()=>{await clearSession();await unlink(runtime);});

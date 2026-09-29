@@ -227,3 +227,15 @@ export function nativeFields(annotations,viewport,page,existing=[]) {
   }
   return fields;
 }
+
+// Keep automatically detected printed areas outside existing PDF widgets.
+export function excludeWidgetRuns(runs,annotations,viewport,words=[]) {
+  const widgets=annotations.filter(a=>a.subtype==='Widget'&&a.rect).map(a=>{
+    const t=viewport.transform,[x0,y0,x1,y1]=a.rect;
+    const r=[t[0]*x0+t[2]*y0+t[4],t[1]*x0+t[3]*y0+t[5],t[0]*x1+t[2]*y1+t[4],t[1]*x1+t[3]*y1+t[5]];
+    return [Math.min(r[0],r[2]),Math.min(r[1],r[3]),Math.max(r[0],r[2]),Math.max(r[1],r[3])];
+  });
+  const available=rect=>!widgets.some(w=>Math.min(rect[2],w[2])-Math.max(rect[0],w[0])>1&&Math.min(rect[3],w[3])-Math.max(rect[1],w[1])>1);
+  return [...groupBoxes(runs.filter(r=>r.kind!=='text').flatMap(r=>r.boxes).filter(available),words),
+    ...runs.filter(r=>r.kind==='text'&&r.boxes.every(available))];
+}

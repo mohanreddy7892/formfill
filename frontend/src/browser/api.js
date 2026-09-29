@@ -6,7 +6,7 @@ import {createWorker} from 'tesseract.js';
 import {PDFDocument,StandardFonts,rgb} from 'pdf-lib';
 import {computedValues,check} from '../demo/rules.js';
 import {fillPdf} from './pdf.js';
-import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields,mergeDetectedRuns,isInstructionPage,fieldLabel} from './detect.js';
+import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields,mergeDetectedRuns,isInstructionPage,fieldLabel,excludeWidgetRuns} from './detect.js';
 import {categories,parseDocument} from './documents.js';
 import seed from './medi-assist.json';
 
@@ -61,22 +61,24 @@ async function upload(file){return operation(async g=>{
       if(!Number.isFinite(viewport.width*viewport.height)||viewport.width>4000||viewport.height>4000)throw new Error('This PDF page is too large for browser processing.');
       pages.push({width:viewport.width,height:viewport.height,transform:[...viewport.transform]});
       let words=textItems(await page.getTextContent(),viewport);printed+=linesOf(words)+'\n';
-      const native=nativeFields(await page.getAnnotations(),viewport,i,fields);
+      const annotations=await page.getAnnotations(),native=nativeFields(annotations,viewport,i,fields);
       fields.push(...native);
       const instructions=isInstructionPage(words);
-      let runs=instructions?[]:boxRuns(await page.getOperatorList(),pdfjs.OPS,viewport,words);
-      if(!native.length&&!instructions){
+      const vector=instructions?[]:boxRuns(await page.getOperatorList(),pdfjs.OPS,viewport,words);
+      let runs=vector;
+      if(!instructions){
         const canvas=await canvasFor(page,g,2.5);
-        try{const raster=rasterBoxRuns(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),canvas.width/viewport.width,canvas.height/viewport.height,words);runs=mergeDetectedRuns(runs,raster,words);
+        try{const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);const raster=rasterBoxRuns(pixels,canvas.width/viewport.width,canvas.height/viewport.height,words);runs=mergeDetectedRuns(runs,raster,words);
           if(runs.filter(r=>r.source==='open-answer').length>=5){
             try{const tsv=await recognize(canvas,g,true);const sx=canvas.width/viewport.width,sy=canvas.height/viewport.height;
-              words=(tsv||'').split('\n').slice(1).map(line=>line.split('\t')).filter(v=>v[0]==='5'&&Number(v[10])>=50&&v[11]?.trim()).map(v=>({text:v[11].trim(),x:Number(v[6])/sx,y:Number(v[7])/sy,width:Number(v[8])/sx,height:Number(v[9])/sy}));
+              const recognized=(tsv||'').split('\n').slice(1).map(line=>line.split('\t')).filter(v=>v[0]==='5'&&Number(v[10])>=50&&v[11]?.trim()).map(v=>({text:v[11].trim(),x:Number(v[6])/sx,y:Number(v[7])/sy,width:Number(v[8])/sx,height:Number(v[9])/sy}));
+              if(recognized.length){words=recognized;runs=mergeDetectedRuns(vector,rasterBoxRuns(pixels,sx,sy,words),words);}
             }catch{guard(g);}
           }
         }
         finally{canvas.width=canvas.height=0;}
       }
-      if(!native.length){runs=runs.map(run=>({...run,label:fieldLabel([Math.min(...run.boxes.map(b=>b[0])),Math.min(...run.boxes.map(b=>b[1])),Math.max(...run.boxes.map(b=>b[2])),Math.max(...run.boxes.map(b=>b[3]))],words)||run.label}));fields.push(...suggestedFields(runs,i));}
+      {runs=excludeWidgetRuns(runs,annotations,viewport,words).map(run=>({...run,label:fieldLabel([Math.min(...run.boxes.map(b=>b[0])),Math.min(...run.boxes.map(b=>b[1])),Math.max(...run.boxes.map(b=>b[2])),Math.max(...run.boxes.map(b=>b[3]))],words)||run.label}));fields.push(...suggestedFields(runs,i));}
       detected.push({width:viewport.width,height:viewport.height,runs});
       page.cleanup();
     }

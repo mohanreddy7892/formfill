@@ -124,3 +124,26 @@ test('aligned colon answers become text areas without covering printed choices',
  assert.equal(mergeDottedAreas([[10,10,40,18],[50,10,80,18]]).length,1);
  assert.equal(mergeDottedAreas([[10,10,40,18],[50,10,80,18]],[{text:'to',x:42,y:10,width:6,height:8}]).length,2);
 });
+
+test('uppercase expansion is validated before character boxes are drawn',async()=>{
+  const doc=await PDFDocument.create();doc.addPage([595,842]);
+  const field={id:'code',label:'Code',page:0,type:'boxes',upper:true,boxes:[[10,10,20,20]]};
+  const template={pages:tpl.pages,fields:[field],rules:[]};
+  assert.throws(()=>checkedValues(template,{code:'ß'}),/Code: too many characters/);
+  await assert.rejects(fillPdf(await doc.save(),template,{code:'ß'}),/Code: too many characters/);
+  field.boxes.push([23,10,33,20]);
+  await assert.doesNotReject(fillPdf(await doc.save(),template,{code:'ß'}));
+});
+
+test('shared preview metrics match the embedded PDF font including alignment',async()=>{
+  const {textFieldLayout}=await import('./text-layout.js');
+  const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.HelveticaBold);
+  for(const rect of [[20,20,220,80],[20,20,220,38]]){
+    for(const align of ['left','right']){
+      const field={type:'text',rect,align,upper:true};
+      const text=rect[3]>40?'TEST PERSON\nEXAMPLE OFFICE':'AVATAR Test';
+      assert.deepEqual(textFieldLayout(field,text),textFieldLayout(field,text,font));
+      if(rect[3]>40)assert.equal(textFieldLayout(field,text).length,2);
+    }
+  }
+});

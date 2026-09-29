@@ -104,8 +104,9 @@ export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
     if(!starts.length)return [rect];
     return starts.map((y,i)=>[rect[0]+7,Math.max(rect[1],y-3),rect[2],Math.min(rect[3],i+1<starts.length?starts[i+1]-3:rect[3])]).filter(r=>r[3]-r[1]>=5);
   });
-  const dotted=dottedAreas(marks).filter(r=>!areas.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1]));
-  return [...groupBoxes(boxes.filter(b=>!insidePrintedWord(b,words)),words),...[...areas,...dotted].map((rect,i)=>({id:`t${i}`,boxes:[rect],kind:'text',label:words.filter(w=>Math.abs(w.y-rect[1])<8&&w.x+w.width<=rect[0]+2&&rect[0]-w.x<140).map(w=>w.text).join(' ').slice(-60)}))];
+  const open=colonAnswerAreas(marks,width/scaleX,height/scaleY,words).filter(r=>!textAreas.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1])&&!boxes.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1]));
+  const dotted=mergeDottedAreas(dottedAreas(marks),words).filter(r=>!areas.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1]));
+  return [...groupBoxes(boxes.filter(b=>!insidePrintedWord(b,words)),words),...[...areas,...open,...dotted].map((rect,i)=>({id:`t${i}`,boxes:[rect],kind:'text',source:open.includes(rect)?'open-answer':'printed-area',label:words.filter(w=>Math.abs(w.y-rect[1])<8&&w.x+w.width<=rect[0]+2&&rect[0]-w.x<140).map(w=>w.text).join(' ').slice(-60)}))];
 }
 
 // Tiny connected ink marks identify dotted blanks and colon-prefixed answers.
@@ -129,6 +130,39 @@ function smallInkMarks(image,sx,sy,mask,queue) {
   }
   return marks.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
 }
+export function mergeDottedAreas(rects,words=[]) {
+  const merged=[];
+  for(const r of [...rects].sort((a,b)=>a[1]-b[1]||a[0]-b[0])){
+    const prior=merged.find(a=>Math.abs(a[3]-r[3])<1.5&&r[0]>=a[2]&&r[0]-a[2]<=20&&!words.some(w=>/[\p{L}\p{N}\x00-\x1f]/u.test(w.text||'')&&w.x>=a[2]&&w.x+w.width<=r[0]&&w.y<r[3]+3&&w.y+(w.height||8)>r[1]));
+    if(prior)prior[2]=r[2];else merged.push([...r]);
+  }return merged;
+}
+
+export function colonAnswerAreas(marks,width,height,words=[]) {
+  const points=[];
+  for(let i=0;i<marks.length;i++){
+    const a=marks[i];if(a[0]<width*.5||a[2]-a[0]>2||a[3]-a[1]>2)continue;
+    for(let j=i+1;j<marks.length&&marks[j][1]-a[1]<=4.5;j++){
+      const b=marks[j],dy=b[1]-a[1];
+      if(dy>=1.4&&Math.abs(a[0]-b[0])<.8&&b[2]-b[0]<=2&&b[3]-b[1]<=2){points.push({x:Math.max(a[2],b[2]),y:a[1]});break;}
+    }
+  }
+  const columns=[];
+  for(const p of points){const column=columns.find(c=>Math.abs(c[0].x-p.x)<2);column?column.push(p):columns.push([p]);}
+  const rects=[];
+  for(const column of columns.filter(c=>c.length>=5)){
+    const rows=column.sort((a,b)=>a.y-b.y).filter((p,i,ps)=>!i||p.y-ps[i-1].y>6);
+    for(let i=0;i<rows.length;i++){
+      const p=rows[i],top=Math.max(0,p.y-3),bottom=Math.min(height-10,rows[i+1]?.y-4||top+18);
+      // Preserve printed options or prompts to the right of the colon.
+      const rightWords=words.filter(w=>w.text?.trim()&&w.x>p.x+5&&Math.abs(w.y-top)<8);
+      const right=Math.min(width-24,...rightWords.map(w=>w.x-3));
+      if(right-p.x>=14&&bottom-top>=6)rects.push([p.x+3,top,right,Math.min(bottom,top+60)]);
+    }
+  }
+  return rects;
+}
+
 export function dottedAreas(marks) {
   const rows=[];
   for(const m of marks){const row=rows.find(r=>Math.abs(r[0][3]-m[3])<.8);row?row.push(m):rows.push([m]);}
@@ -159,16 +193,18 @@ const insidePrintedWord=(b,words)=>{
   return covered>(b[2]-b[0])*.9&&overlapping.some(w=>w.x<b[0]-.5||w.x+w.width>b[2]+.5);
 };
 
-const cleanLabel=s=>s&&!/[\x00-\x1f\ufffd]/.test(s)?s:'';
+const cleanLabel=s=>s&&/\p{L}/u.test(s)&&!/[\x00-\x1f\ufffd]/.test(s)?s.trim():'';
 
 export function fieldLabel(rect,words) {
-  const usable=words.filter(w=>w.text?.trim()&&!/[\x00-\x1f\ufffd]/.test(w.text));
+  const usable=words.filter(w=>w.text?.trim()&&/\p{L}/u.test(w.text)&&!/[\x00-\x1f\ufffd]/.test(w.text));
   const left=usable.filter(w=>w.x+w.width<=rect[0]+1&&rect[0]-w.x<220&&Math.abs(w.y-rect[1])<10);
   const above=usable.filter(w=>w.y+(w.height||8)<=rect[1]+1&&rect[1]-w.y-(w.height||8)<14&&w.x>=rect[0]-8&&w.x<rect[2]);
   const candidates=left.length?left:above;if(!candidates.length)return '';
   const anchor=candidates.reduce((a,b)=>Math.abs(a.y-rect[1])<Math.abs(b.y-rect[1])?a:b);
   const line=candidates.filter(w=>Math.abs(w.y-anchor.y)<3).sort((a,b)=>a.x-b.x);
-  return line.map(w=>w.text).join(' ').replace(/^\s*\d+[.)]?\s*/, '').replace(/[:\s]+$/,'').slice(-80);
+  let start=0;
+  if(left.length)for(let i=1;i<line.length;i++)if(line[i].x-line[i-1].x-line[i-1].width>20)start=i;
+  return line.slice(start).map(w=>w.text).join(' ').replace(/^\s*\d+[.)]?\s*/, '').replace(/[:\s]+$/,'').slice(-80);
 }
 
 export function suggestedFields(runs,page) {

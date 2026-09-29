@@ -115,3 +115,12 @@ test('small printed placeholders do not remove real character boxes',async()=>{
   const runs=mergeDetectedRuns([{kind:'boxes',boxes}],[],[{x:9,y:12,width:26,height:6,text:'NAME'}]);
   assert.equal(runs[0].boxes.length,2);
 });
+test('aligned colon answers become text areas without covering printed choices',async()=>{
+ const {colonAnswerAreas,mergeDottedAreas}=await import('./detect.js');
+ const marks=Array.from({length:6},(_,i)=>[[300,100+i*20,301,101+i*20],[300,103+i*20,301,104+i*20]]).flat();
+ const rects=colonAnswerAreas(marks,450,792,[{text:'Yes / No',x:335,y:97,width:40,height:10}]);
+ assert.equal(rects.length,6);assert.ok(rects[0][2]<335);assert.ok(rects.every(r=>r[0]>301));
+ assert.deepEqual(colonAnswerAreas(marks.slice(0,2),450,792),[]);
+ assert.equal(mergeDottedAreas([[10,10,40,18],[50,10,80,18]]).length,1);
+ assert.equal(mergeDottedAreas([[10,10,40,18],[50,10,80,18]],[{text:'to',x:42,y:10,width:6,height:8}]).length,2);
+});

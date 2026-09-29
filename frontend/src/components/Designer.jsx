@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "../api.js";
 import PageCanvas, { PageThumb, rectOf } from "./PageCanvas.jsx";
 import { Outline } from "./ValueLayer.jsx";
 import { appendFields, groupBy, overlaps } from "../util.js";
+
+import { layoutHistory } from "../layout-history.js";
 
 const MODES = [
   { id: "select", label: "Pick detected", tip: "Click amber boxes to select them, then make a field" },
@@ -12,7 +14,10 @@ const MODES = [
 ];
 
 export default function Designer({ formId, go }) {
-  const [tpl, setTpl] = useState(null);
+  const [history, dispatch] = useReducer(layoutHistory, {present:null,past:[]});
+  const tpl=history.present;
+  const setTpl=useCallback(value=>dispatch({type:'set',value}),[]);
+  const [readingLabels,setReadingLabels]=useState(false);
   const [det, setDet] = useState(null);
   const [page, setPage] = useState(0);
   const [mode, setMode] = useState("select");
@@ -30,7 +35,13 @@ export default function Designer({ formId, go }) {
       .catch((e) => setStatus(e.message));
   }, [formId]);
 
-  const update = useCallback((fn) => { setTpl((t) => ({ ...t, fields: fn(t.fields) })); setDirty(true); }, []);
+  const update = useCallback((fn,record=true) => { dispatch({type:'edit',record,fn:t=>({...t,fields:fn(t.fields)})}); setDirty(true); }, []);
+  const undo = () => { gesture.current=null;pendingActive.current=null;setDraft(null);dispatch({type:'undo'});setActiveId(null);setSel([]);setDirty(true); };
+  async function readLabels() {
+    setReadingLabels(true);setStatus("Reading printed labels on this page…");
+    try { const labels=await api.suggestLabels(formId,page,tpl.fields);update(fs=>fs.map(f=>labels[f.id]&&f.label===tpl.fields.find(before=>before.id===f.id)?.label?{...f,label:labels[f.id]}:f));setStatus("Labels suggested. Review them before applying."); }
+    catch(e){setStatus(e.message);}finally{setReadingLabels(false);}
+  }
   const active = tpl?.fields.find((f) => f.id === activeId);
 
   const runs = det?.pages[page]?.runs || [];
@@ -97,12 +108,12 @@ export default function Designer({ formId, go }) {
       const p=tpl.pages[page],r=g.rect; let next;
       if(g.kind === "resize") next=[r[0],r[1],Math.min(p.width,Math.max(r[0]+4,x)),Math.min(p.height,Math.max(r[1]+4,y))];
       else { const dx=Math.max(-r[0],Math.min(p.width-r[2],x-g.start[0])),dy=Math.max(-r[1],Math.min(p.height-r[3],y-g.start[1])); next=[r[0]+dx,r[1]+dy,r[2]+dx,r[3]+dy]; }
-      if(g.changed || next.some((v,i)=>Math.abs(v-r[i])>.1)) { g.changed=true; update(fs=>fs.map(f=>f.id===g.id?{...f,rect:next}:f)); }
+      if(g.changed || next.some((v,i)=>Math.abs(v-r[i])>.1)) { const record=!g.changed;g.changed=true; update(fs=>fs.map(f=>f.id===g.id?{...f,rect:next}:f),record); }
     }
   };
   const onCancel = () => {
     const g=gesture.current;
-    if(g?.changed) update(fs=>fs.map(f=>f.id===g.id?{...f,rect:g.rect}:f));
+    if(g?.changed) dispatch({type:'undo'});
     gesture.current=null; setDraft(null);
   };
   const onUp = (e) => {
@@ -123,6 +134,7 @@ export default function Designer({ formId, go }) {
   useEffect(() => {
     const onKey = (e) => {
       if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();undo();return;}
       if (e.key === "Escape") { onCancel(); setSel([]); setActiveId(null); setMode("select"); }
       if ((e.key === "Delete" || e.key === "Backspace") && activeId) { update((fs) => fs.filter((f) => f.id !== activeId)); setActiveId(null); }
     };
@@ -144,16 +156,18 @@ export default function Designer({ formId, go }) {
   return (
     <section className="designer">
       <div className="toolbar">
-        <input className="title-input" value={tpl.name} aria-label="Form name" onChange={(e) => { setTpl({ ...tpl, name: e.target.value }); setDirty(true); }} />
+        <input className="title-input" value={tpl.name} aria-label="Form name" onChange={(e) => { dispatch({type:'edit',fn:t=>({...t,name:e.target.value})}); setDirty(true); }} />
         <div className="seg" role="group" aria-label="Tool">
           {MODES.map((m) => (
             <button key={m.id} className={mode === m.id ? "on" : ""} title={m.tip} onClick={() => { onCancel(); setMode(m.id); setSel([]); setStatus(""); }}>{m.label}</button>
           ))}
         </div>
+        <button className="btn" onClick={undo} disabled={!history.past.length||saving||readingLabels}>Undo</button>
+        <button className="btn" onClick={readLabels} disabled={readingLabels||saving}>{readingLabels?"Reading labels…":"Read page labels"}</button>
         <span className="spacer" />
         {status && <span className="status" role="status">{status}</span>}
-        <button className="btn" onClick={() => dirty ? save(true) : go("fill", formId)} disabled={saving}>{dirty ? "Apply & fill" : "Try filling"}</button>
-        <button className="btn primary" onClick={() => save()} disabled={!dirty || saving}>Save layout</button>
+        <button className="btn" onClick={() => dirty ? save(true) : go("fill", formId)} disabled={saving||readingLabels}>{dirty ? "Apply & fill" : "Try filling"}</button>
+        <button className="btn primary" onClick={() => save()} disabled={!dirty || saving||readingLabels}>Save layout</button>
       </div>
 
       <div className="designer-body">

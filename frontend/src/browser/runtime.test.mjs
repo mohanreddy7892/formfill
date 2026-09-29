@@ -21,7 +21,7 @@ await build({entryPoints:[`${root}/src/browser/api.js`],outfile:runtime,bundle:t
  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export default ${JSON.stringify(`${root}/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs`)}`}));
  b.onResolve({filter:/node_modules\/tesseract\.js\/src\/index\.js$/},args=>({path:args.path,external:true}));
  b.onResolve({filter:/^tesseract.js$/},()=>({path:'ocr',namespace:'ocr'}));
- b.onLoad({filter:/.*/,namespace:'ocr'},()=>({contents:`import {createWorker as make} from ${JSON.stringify(`${root}/node_modules/tesseract.js/src/index.js`)};export async function createWorker(lang,oem,options){const w=await make(lang,oem,{...options,workerPath:${JSON.stringify(`${root}/node_modules/tesseract.js/src/worker-script/node/index.js`)},langPath:${JSON.stringify(`${root}/public/ocr`)},corePath:${JSON.stringify(`${root}/node_modules/tesseract.js-core`)}});const recognize=w.recognize;w.recognize=image=>recognize(image.toBuffer?image.toBuffer('image/png'):image);return w;}`}));
+ b.onLoad({filter:/.*/,namespace:'ocr'},()=>({contents:`import {createWorker as make} from ${JSON.stringify(`${root}/node_modules/tesseract.js/src/index.js`)};export async function createWorker(lang,oem,options){const w=await make(lang,oem,{...options,workerPath:${JSON.stringify(`${root}/node_modules/tesseract.js/src/worker-script/node/index.js`)},langPath:${JSON.stringify(`${root}/public/ocr`)},corePath:${JSON.stringify(`${root}/node_modules/tesseract.js-core`)}});const recognize=w.recognize;w.recognize=(image,opts,output)=>recognize(image.toBuffer?image.toBuffer('image/png'):image,opts,output);return w;}`}));
  b.onLoad({filter:/browser\/api\.js$/},async args=>{const {readFile}=await import('node:fs/promises');let text=await readFile(args.path,'utf8');text=text.replaceAll("'/pdf/cmaps/'",JSON.stringify(`${root}/public/pdf/cmaps/`)).replaceAll("'/pdf/standard_fonts/'",JSON.stringify(`${root}/public/pdf/standard_fonts/`)).replaceAll("'/pdf/wasm/'",JSON.stringify(`${root}/public/pdf/wasm/`));return {contents:text,resolveDir:`${root}/src/browser`};});
 }}]});
 const {api,clearSession}=await import('./.runtime-api.mjs');
@@ -41,4 +41,11 @@ test('browser session: detect, render, fill, scan, pack and clear',async()=>{
  console.log('Sample result: detected 8 boxes; OCR amount 1234.56; exported 3-page pack; session forms after clear = 0');
 });
 test('clearing an in-flight upload cannot restore private data',async()=>{const f=await fixture(),pending=api.upload(f);await clearSession();await assert.rejects(pending,/Session cleared/);assert.equal((await api.templates()).length,0);});
+test('page labels use local OCR and do not read entered answers as labels',async()=>{
+ const doc=await PDFDocument.create(),page=doc.addPage([595,842]);page.drawText('Name:',{x:40,y:750,size:14});page.drawText('TEST VALUE',{x:210,y:740,size:12});
+ const r=await api.upload(new File([await doc.save()],'fictional-label.pdf',{type:'application/pdf'}));
+ const labels=await api.suggestLabels(r.form_id,0,[{id:'answer',page:0,type:'text',rect:[200,82,350,112]}]);
+ assert.match(labels.answer,/name/i);await clearSession();assert.equal((await api.templates()).length,0);
+ console.log('Local page-label OCR passed; session cleared.');
+});
 test.after(async()=>{await clearSession();await unlink(runtime);});

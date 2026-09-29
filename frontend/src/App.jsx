@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, clearSession } from "./api.js";
+import { api, clearSession, sessionExpiresAt } from "./api.js";
 import Library from "./components/Library.jsx";
 import Designer from "./components/Designer.jsx";
 import FillForm from "./components/FillForm.jsx";
@@ -10,6 +10,7 @@ function parseHash() {
 }
 
 export default function App() {
+  const [remaining,setRemaining]=useState(()=>Math.max(0,Math.ceil((sessionExpiresAt()-Date.now())/1000)));
   const [route, setRoute] = useState(parseHash());
   const [generation, setGeneration] = useState(0);
   const [privacyMessage, setPrivacyMessage] = useState("");
@@ -39,9 +40,10 @@ export default function App() {
     return () => window.removeEventListener('formfill-expired', expired);
   }, []);
   useEffect(() => {
-    const timer = setTimeout(clear, 15 * 60 * 1000);
-    return () => clearTimeout(timer);
-  }, [generation]);
+    const refresh=()=>setRemaining(Math.max(0,Math.ceil((sessionExpiresAt()-Date.now())/1000)));
+    const timer=setInterval(refresh,1000);window.addEventListener('focus',refresh);
+    return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};
+  },[]);
   useEffect(() => {
     const on = () => setRoute(parseHash());
     window.addEventListener("hashchange", on);
@@ -59,8 +61,10 @@ export default function App() {
           <span className="brand-name">fill</span>
         </a>
         <p className="topbar-note">Processed on your device · clears after 15 minutes. Explicit PDF downloads stay on your device.</p>
+        <span className={`session-clock ${remaining<=120?'expiring':''}`} aria-label="Time until session clears">Clears in {Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</span>
         <button className="btn ghost" onClick={clear}>Clear session</button>
       </header>
+      {remaining<=120&&remaining>0&&<p className="expiry-warning" role="status">Session clears in under two minutes. Download your completed PDF before it expires.</p>}
       {privacyMessage && <p role="status">{privacyMessage}</p>}
       {window.__FORMFILL_DEMO__ && (
         <p className="demo-banner">

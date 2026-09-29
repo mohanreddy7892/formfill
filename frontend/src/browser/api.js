@@ -6,7 +6,7 @@ import {createWorker} from 'tesseract.js';
 import {PDFDocument,StandardFonts,rgb} from 'pdf-lib';
 import {computedValues,check} from '../demo/rules.js';
 import {fillPdf} from './pdf.js';
-import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields,mergeDetectedRuns,isInstructionPage} from './detect.js';
+import {boxRuns,nativeFields,rasterBoxRuns,suggestedFields,mergeDetectedRuns,isInstructionPage,fieldLabel} from './detect.js';
 import {categories,parseDocument} from './documents.js';
 import seed from './medi-assist.json';
 
@@ -70,7 +70,7 @@ async function upload(file){return operation(async g=>{
         try{const raster=rasterBoxRuns(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),canvas.width/viewport.width,canvas.height/viewport.height,words);runs=mergeDetectedRuns(runs,raster,words);}
         finally{canvas.width=canvas.height=0;}
       }
-      if(!native.length)fields.push(...suggestedFields(runs,i));
+      if(!native.length){runs=runs.map(run=>({...run,label:fieldLabel([Math.min(...run.boxes.map(b=>b[0])),Math.min(...run.boxes.map(b=>b[1])),Math.max(...run.boxes.map(b=>b[2])),Math.max(...run.boxes.map(b=>b[3]))],words)||run.label}));fields.push(...suggestedFields(runs,i));}
       detected.push({width:viewport.width,height:viewport.height,runs});
       page.cleanup();
     }
@@ -96,7 +96,7 @@ async function pageImage(id,index){
   urls.set(key,pending);pending.catch(()=>{if(urls.get(key)===pending)urls.delete(key);});return pending;
 }
 
-async function recognize(image,g){
+async function recognize(image,g,positions=false){
   guard(g);
   let abandoned=false;
   const pending=createWorker('eng',1,{workerPath:'/ocr/worker.min.js',corePath:'/ocr',langPath:'/ocr',cacheMethod:'none',workerBlobURL:false,logger:()=>{},errorHandler:()=>{}});
@@ -104,7 +104,7 @@ async function recognize(image,g){
   let worker;try{worker=await cancelable(pending,g);}catch(e){abandoned=true;throw e;}
   if(g!==generation){await worker.terminate();throw canceled();}
   ocrWorkers.add(worker);
-  try{const result=await cancelable(worker.recognize(image),g);guard(g);return result.data.text;}
+  try{const result=await cancelable(worker.recognize(image,{},positions?{tsv:true}:undefined),g);guard(g);return positions?result.data.tsv:result.data.text;}
   finally{ocrWorkers.delete(worker);await worker.terminate();}
 }
 async function imageCanvas(file,g){
@@ -172,6 +172,21 @@ async function pack(id,files,selected,values){return operation(async g=>{
 export const api={upload,pageImage,pack,
   templates:async()=>{guard(generation);return [...forms.entries()].map(([form_id,f])=>({form_id,name:f.tpl.name,pages:f.tpl.pages.length,fields:f.tpl.fields.length}));},
   template:async id=>clone(get(id).tpl),detect:async id=>clone(get(id).detect),
+  suggestLabels:(id,index,currentFields)=>operation(async g=>{
+    const f=get(id);const selected=currentFields||f.tpl.fields;if(!Array.isArray(selected)||selected.length>5000)throw new Error('This layout is too large.');if(!Number.isInteger(index)||index<0||index>=f.tpl.pages.length)throw new Error('Choose a valid page.');
+    return withPdf(f.bytes,g,async doc=>{
+      const page=await doc.getPage(index+1),view=page.getViewport({scale:1}),canvas=await canvasFor(page,g,2);
+      try {
+        const tsv=await recognize(canvas,g,true),sx=canvas.width/view.width,sy=canvas.height/view.height;
+        const words=(tsv||'').split('\n').slice(1).map(line=>line.split('\t')).filter(v=>v[0]==='5'&&Number(v[10])>=50&&v[11]?.trim()).map(v=>({text:v[11].trim(),x:Number(v[6])/sx,y:Number(v[7])/sy,width:Number(v[8])/sx,height:Number(v[9])/sy}));
+        const labels={};for(const field of selected.filter(x=>x.page===index&&!x.acro_name)){
+          const boxes=field.boxes?.length?field.boxes:field.rect?[field.rect]:[];if(!boxes.length)continue;
+          const rect=[Math.min(...boxes.map(b=>b[0])),Math.min(...boxes.map(b=>b[1])),Math.max(...boxes.map(b=>b[2])),Math.max(...boxes.map(b=>b[3]))];
+          const label=fieldLabel(rect,words);if(label)labels[field.id]=label;
+        }return labels;
+      }finally{canvas.width=canvas.height=0;}
+    });
+  }),
   saveTemplate:async(id,tpl)=>{const f=get(id);if(JSON.stringify(tpl).length>MB)throw new Error('This layout is too large.');f.tpl={...clone(tpl),form_id:id,pages:f.tpl.pages,version:f.tpl.version+1};return {saved:true,version:f.tpl.version};},
   remove:async id=>{forms.delete(id);for(const [key,promise] of urls){if(key.startsWith(`${id}/`)){promise.then(URL.revokeObjectURL).catch(()=>{});urls.delete(key);}}return {deleted:true};},
   fill:(id,values)=>operation(async g=>{const f=get(id),bytes=await fillPdf(f.bytes,f.tpl,values);guard(g);return new Blob([bytes],{type:'application/pdf'});}),
@@ -189,3 +204,5 @@ setInterval(()=>{if(Date.now()>=expires){void clearSession();window.dispatchEven
 window.addEventListener('pagehide',()=>{void clearSession();window.dispatchEvent(new Event('formfill-expired'));});
 window.addEventListener('pageshow',event=>{if(event.persisted)window.location.reload();});
 window.addEventListener('focus',()=>{if(Date.now()>=expires){void clearSession();window.dispatchEvent(new Event('formfill-expired'));}});
+
+export const sessionExpiresAt=()=>expires;

@@ -161,8 +161,18 @@ const insidePrintedWord=(b,words)=>{
 
 const cleanLabel=s=>s&&!/[\x00-\x1f\ufffd]/.test(s)?s:'';
 
+export function fieldLabel(rect,words) {
+  const usable=words.filter(w=>w.text?.trim()&&!/[\x00-\x1f\ufffd]/.test(w.text));
+  const left=usable.filter(w=>w.x+w.width<=rect[0]+1&&rect[0]-w.x<220&&Math.abs(w.y-rect[1])<10);
+  const above=usable.filter(w=>w.y+(w.height||8)<=rect[1]+1&&rect[1]-w.y-(w.height||8)<14&&w.x>=rect[0]-8&&w.x<rect[2]);
+  const candidates=left.length?left:above;if(!candidates.length)return '';
+  const anchor=candidates.reduce((a,b)=>Math.abs(a.y-rect[1])<Math.abs(b.y-rect[1])?a:b);
+  const line=candidates.filter(w=>Math.abs(w.y-anchor.y)<3).sort((a,b)=>a.x-b.x);
+  return line.map(w=>w.text).join(' ').replace(/^\s*\d+[.)]?\s*/, '').replace(/[:\s]+$/,'').slice(-80);
+}
+
 export function suggestedFields(runs,page) {
-  return runs.map((run,i)=>({id:`detected_${page}_${i}`,page,group:`Page ${page+1}`,label:cleanLabel(run.label)||`Field ${i+1}`,
+  return runs.map((run,i)=>({id:`detected_${page}_${i}`,page,group:`Page ${page+1}`,label:cleanLabel(run.label)||`${run.kind==='text'?'Text area':run.boxes.length>1?'Character boxes':'Checkbox'} ${i+1}`,
     type:run.kind==='text'?'text':run.boxes.length>1?'boxes':'checkbox',boxes:run.kind!=='text'&&run.boxes.length>1?run.boxes:[],rect:run.boxes.length===1?run.boxes[0]:null,
     options:[],upper:true,align:'left',clear:false,multi:false,hint:'Suggested from printed areas. Check its label and position before filling.'}));
 }

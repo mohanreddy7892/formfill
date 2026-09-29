@@ -47,3 +47,9 @@ The blank four-page MED.97 form was checked with fictional values: 94 suggested 
 Text boxes can be added with one tap or a drag, moved by dragging, and resized from their corner or width/height controls. Apply & fill keeps the layout in the temporary session before opening the fill screen; failures keep the user in the designer. Drawings and moves are bounded by page edges. Pointer cancellation restores the prior field rectangle. The build was checked; touch gestures still need target-device QA.
 
 Upload controls use visible native file inputs rather than hidden label-activated inputs. Selecting files copies their references before clearing the input; cancelling leaves the form unchanged. Concurrent main-form uploads are blocked. This compatibility change builds successfully but requires verification on an actual iPhone; an embedded browser may still behave differently from Safari. Session expiry and navigation cleanup remain unchanged.
+
+## Editing and session controls
+
+Undo keeps at most 20 layout snapshots in component memory and restores a complete drag as one action. Ctrl/Cmd+Z also works outside text inputs. History is discarded when the session clears or the designer closes. Page zoom ranges from 100% to 300% with Fit page; geometry remains in PDF coordinates. The visible countdown uses the browser session's actual expiry and warns during its last two minutes without extending it.
+
+Read page labels runs the bundled English OCR on the selected page only, uses printed prompts outside answer areas, and returns reviewable label suggestions. It supports unsaved drawn areas and preserves labels changed while OCR was running. No OCR text or history is persisted. Build, local label OCR, Undo and cleanup checks passed; real iPhone file-picker/gesture QA remains unavailable in this environment.

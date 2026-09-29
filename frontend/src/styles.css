@@ -251,3 +251,12 @@ dialog.docs::backdrop { background: rgba(31, 39, 51, 0.45); }
 .file-picker::file-selector-button { min-height: 44px; margin-right: 10px; padding: 10px 16px; border: 1px solid var(--ink); border-radius: 6px; background: var(--ink); color: #fff; font: inherit; cursor: pointer; }
 .file-picker:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
 .file-picker:disabled { opacity: .6; }
+
+.page-viewer { width: 100%; max-width: 1000px; margin: 0 auto; min-width: 0; }
+.zoom-scroll { overflow: auto; padding: 3px; }
+.zoom-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.zoom-controls .btn { min-width: 44px; min-height: 44px; }
+.session-clock { font-size: 14px; white-space: nowrap; margin-left: auto; }
+.session-clock.expiring { color: var(--red); font-weight: 700; }
+.expiry-warning { margin: 0; padding: 8px 16px; background: #fff4d8; color: #6b4700; font-size: 14px; }
+@media(max-width:700px) { .session-clock { font-size: 13px; } .canvas-wrap { padding: 12px 12px 24px; } }

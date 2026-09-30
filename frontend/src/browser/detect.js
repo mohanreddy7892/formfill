@@ -152,12 +152,18 @@ export function colonAnswerAreas(marks,width,height,words=[]) {
   const rects=[];
   for(const column of columns.filter(c=>c.length>=5)){
     const rows=column.sort((a,b)=>a.y-b.y).filter((p,i,ps)=>!i||p.y-ps[i-1].y>6);
+    // A skipped row (no colon of its own) leaves a gap that is a multiple of the true
+    // line pitch. Bound every row by the column's tightest gap so a lone colon isn't
+    // stretched across several printed lines just because its neighbour is far below.
+    const gaps=rows.slice(1).map((p,i)=>p.y-rows[i].y);
+    const lineHeight=gaps.length?Math.min(...gaps):18;
     for(let i=0;i<rows.length;i++){
-      const p=rows[i],top=Math.max(0,p.y-3),bottom=Math.min(height-10,rows[i+1]?.y-4||top+18);
+      const p=rows[i],top=Math.max(0,p.y-3);
+      const bottom=Math.min(height-10,top+lineHeight,rows[i+1]?.y-4||(top+lineHeight));
       // Preserve printed options or prompts to the right of the colon.
       const rightWords=words.filter(w=>w.text?.trim()&&w.x>p.x+5&&Math.abs(w.y-top)<8);
       const right=Math.min(width-24,...rightWords.map(w=>w.x-3));
-      if(right-p.x>=14&&bottom-top>=6)rects.push([p.x+3,top,right,Math.min(bottom,top+60)]);
+      if(right-p.x>=14&&bottom-top>=6)rects.push([p.x+3,top,right,bottom]);
     }
   }
   return rects;

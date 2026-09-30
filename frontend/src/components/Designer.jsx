@@ -213,12 +213,11 @@ export default function Designer({ formId, go }) {
         </div>
 
         <aside className="inspector">
-          {tpl.review_layout && <p className="hint-box" role="status">{tpl.fields.length} fields suggested from printed areas. Select an outline to review its label and position. Rename fields as needed, save any changes, then choose Try filling. Detection can miss or misidentify boxes.</p>}
+          {tpl.review_layout && <p className="hint-box" role="status">{tpl.fields.length} fields found. Tap one to check its label, then choose Try filling.</p>}
           {active ? <Inspector f={active} info={tpl.pages[active.page]} update={update} setActiveId={setActiveId} existing={tpl.fields} /> : (
             <div className="hint-box">
-              <p><strong>Map this form</strong></p>
-              <p>Amber outlines are boxes found on the page. Select one row (or several), then choose what it is. Use the draw tools for anything that wasn't found, including scanned forms.</p>
-              <p className="muted">Esc clears the selection. Delete removes the selected field.</p>
+              <p><strong>Mark the fields</strong></p>
+              <p>Tap an amber box, then pick its type. Draw any that were missed.</p>
             </div>
           )}
           <FieldList fields={tpl.fields} activeId={activeId} onPick={(f) => { setPage(f.page); setActiveId(f.id); setMode("select"); }} />

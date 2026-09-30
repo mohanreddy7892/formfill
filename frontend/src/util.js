@@ -86,3 +86,27 @@ export function assignBills(table, values, bills) {
   }
   return { updates, placed, skipped };
 }
+
+/**
+ * Find day / month / year box rows so they can be shown as one date field.
+ * A run is 3 consecutive box fields: (2, 2, 2|4 boxes) named "... - day/month/year" or sharing one label.
+ * Returns items in display order: {date:[d,m,y], label} or {field}.
+ */
+export function dateRuns(fields) {
+  const SUFFIX = /\s*[-\u2013:]\s*(day|month|year)(\s*\(.*?\))?\s*$/i;
+  const base = (f) => (f.label || "").replace(SUFFIX, "").trim();
+  const kind = (f) => (SUFFIX.exec(f.label || "")?.[1] || "").toLowerCase();
+  const out = [];
+  for (let i = 0; i < fields.length; i++) {
+    const [a, b, c] = [fields[i], fields[i + 1], fields[i + 2]];
+    const boxes = (f) => f?.type === "boxes" ? f.boxes.length : 0;
+    const shape = boxes(a) === 2 && boxes(b) === 2 && (boxes(c) === 2 || boxes(c) === 4);
+    const named = kind(a) === "day" && kind(b) === "month" && kind(c) === "year" && base(a) === base(b) && base(b) === base(c);
+    const same = !!a?.label && a.label === b?.label && b?.label === c?.label && /birth|dob|date|admission|discharge/i.test(a.label);
+    if (shape && (named || same) && a.page === b.page && b.page === c.page) {
+      out.push({ date: [a, b, c], label: named ? base(a) : a.label });
+      i += 2;
+    } else out.push({ field: a });
+  }
+  return out;
+}

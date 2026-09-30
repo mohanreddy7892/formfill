@@ -124,6 +124,17 @@ test('aligned colon answers become text areas without covering printed choices',
  assert.equal(mergeDottedAreas([[10,10,40,18],[50,10,80,18]]).length,1);
  assert.equal(mergeDottedAreas([[10,10,40,18],[50,10,80,18]],[{text:'to',x:42,y:10,width:6,height:8}]).length,2);
 });
+test('a colon row is not stretched across skipped lines to reach its next neighbour',async()=>{
+ const {colonAnswerAreas}=await import('./detect.js');
+ // 4 rows spaced 20pt apart (one printed line each), then a 5th row 3 lines further down -
+ // as happens when the rows in between belong to a different, unrelated field.
+ const close=Array.from({length:4},(_,i)=>[[300,100+i*20,301,101+i*20],[300,103+i*20,301,104+i*20]]).flat();
+ const far=[[300,220,301,221],[300,223,301,224]];
+ const rects=colonAnswerAreas([...close,...far],450,792,[{text:'Yes / No',x:335,y:97,width:40,height:10}]);
+ assert.equal(rects.length,5);
+ const heights=rects.map((r)=>r[3]-r[1]);
+ assert.ok(heights.every((h)=>h<=22),`expected every row capped near one line, got ${heights}`);
+});
 
 test('uppercase expansion is validated before character boxes are drawn',async()=>{
   const doc=await PDFDocument.create();doc.addPage([595,842]);

@@ -3,6 +3,8 @@ import { api, clearSession, sessionExpiresAt } from "./api.js";
 import Library from "./components/Library.jsx";
 import Designer from "./components/Designer.jsx";
 import FillForm from "./components/FillForm.jsx";
+import Menu from "./components/Menu.jsx";
+import { Clock, Lock } from "./components/Icons.jsx";
 
 function parseHash() {
   const [, view, id] = window.location.hash.split("/");
@@ -19,7 +21,7 @@ export default function App() {
     window.location.hash = "/library";
     setRoute({view:"library"});
     const cleared = await clearSession();
-    setPrivacyMessage(cleared ? "Session cleared." : "Browser cleared. Server cleanup could not be confirmed; temporary forms expire automatically.");
+    setPrivacyMessage(cleared ? "Session cleared." : "Cleared here. Old data expires on its own.");
   }
   useEffect(() => {
     const context=document.modelContext;
@@ -35,10 +37,15 @@ export default function App() {
     return()=>controller.abort();
   },[]);
   useEffect(() => {
-    const expired = () => { setGeneration(g => g + 1); window.location.hash='/library'; setRoute({view:'library'}); setPrivacyMessage('Session expired and cleared. Choose your documents again.'); };
+    const expired = () => { setGeneration(g => g + 1); window.location.hash='/library'; setRoute({view:'library'}); setPrivacyMessage('Session expired. Add your form again.'); };
     window.addEventListener('formfill-expired', expired);
     return () => window.removeEventListener('formfill-expired', expired);
   }, []);
+  useEffect(() => {
+    if (!privacyMessage) return;
+    const t = setTimeout(() => setPrivacyMessage(""), 5000);
+    return () => clearTimeout(t);
+  }, [privacyMessage]);
   useEffect(() => {
     const refresh=()=>setRemaining(Math.max(0,Math.ceil((sessionExpiresAt()-Date.now())/1000)));
     const timer=setInterval(refresh,1000);window.addEventListener('focus',refresh);
@@ -60,21 +67,23 @@ export default function App() {
           </span>
           <span className="brand-name">fill</span>
         </a>
-        <p className="topbar-note">Processed on your device · clears after 15 minutes. Explicit PDF downloads stay on your device.</p>
-        <span className={`session-clock ${remaining<=120?'expiring':''}`} aria-label="Time until session clears">Clears in {Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</span>
-        <button className="btn ghost" onClick={clear}>Clear session</button>
+        <span className="spacer" />
+        <span className={`session-chip ${remaining<=120?'expiring':''}`} role="timer" aria-label={`Session clears in ${Math.floor(remaining/60)} minutes ${remaining%60} seconds`}>
+          <Clock width={16} height={16} />{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}
+        </span>
+        <Menu label="Session menu">
+          <p className="menu-note"><Lock width={16} height={16} />Stays in this tab. Clears after 15 minutes.</p>
+          <button type="button" role="menuitem" onClick={clear}>Clear session now</button>
+        </Menu>
       </header>
-      {remaining<=120&&remaining>0&&<p className="expiry-warning" role="status">Session clears in under two minutes. Download your completed PDF before it expires.</p>}
-      {privacyMessage && <p role="status">{privacyMessage}</p>}
+      {remaining<=120&&remaining>0&&<p className="notice warn" role="status">Clears in under 2 minutes. Download your PDF now.</p>}
+      {privacyMessage && <p className="notice ok" role="status">{privacyMessage}</p>}
       {window.__FORMFILL_DEMO__ && (
-        <p className="demo-banner">
-          <span className="wide-only">Interactive demo with fictional data. Typing, auto-calculation, checks, the field designer and bill reading all work here; creating PDFs needs the installed app.</span>
-          <span className="narrow-only">Demo with fictional data · PDF download needs the installed app</span>
-        </p>
+        <p className="demo-banner">Demo with fictional data. PDF download needs the installed app.</p>
       )}
       <main className="main" key={generation}>
         {route.view === "design" && route.id && <Designer formId={route.id} go={go} />}
-        {route.view === "fill" && route.id && <FillForm formId={route.id} go={go} />}
+        {route.view === "fill" && route.id && <FillForm formId={route.id} go={go} onClear={clear} />}
         {(route.view === "library" || !route.id) && <Library go={go} />}
       </main>
     </div>

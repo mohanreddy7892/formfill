@@ -31,7 +31,7 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
   async function add(fileList) {
     const files = [...fileList].filter((f) => /pdf|image/.test(f.type) || /\.(pdf|jpe?g|png|tiff?)$/i.test(f.name));
     if (!files.length) return;
-    if (docs.length + files.length > 30 || [...docs.map(d => d.file), ...files].reduce((n,f) => n + f.size, 0) > 60*1024*1024 || files.some(f => f.size > 20*1024*1024)) { setMsg({err: "Choose up to 30 documents, 20 MB each and 60 MB total."}); return; }
+    if (docs.length + files.length > 30 || [...docs.map(d => d.file), ...files].reduce((n,f) => n + f.size, 0) > 60*1024*1024 || files.some(f => f.size > 20*1024*1024)) { setMsg({err: "Up to 30 files, 20 MB each, 60 MB total."}); return; }
     const fresh = files.map((file) => ({ id: crypto.randomUUID(), file, category: "other", busy: true }));
     setDocs((d) => [...d, ...fresh]); setMsg(null); setReport(null);
     if (!features?.ocr) { setDocs((d) => d.map((x) => (x.busy ? { ...x, busy: false } : x))); return; }
@@ -58,8 +58,8 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
   function addBills() {
     const { updates, placed, skipped } = assignBills(table, values, bills.map((d) => ({ ...d.bill, kind: KIND_OF[d.category] })));
     setValues((v) => ({ ...v, ...updates }));
-    const why = skipped.length ? ` · ${skipped.length} not added (${[...new Set(skipped.map((s) => s.reason))].join(", ")})` : "";
-    setMsg({ ok: `${placed.length} bill${placed.length === 1 ? "" : "s"} added to ${table.label}${why}` });
+    const why = skipped.length ? ` · ${skipped.length} skipped (${[...new Set(skipped.map((s) => s.reason))].join(", ")})` : "";
+    setMsg({ ok: `${placed.length} bill${placed.length === 1 ? "" : "s"} added${why}` });
   }
 
   async function buildPack() {
@@ -78,13 +78,12 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
     <dialog ref={dialog} className="docs" aria-labelledby="docs-title" onClose={onClose}>
       <header className="docs-head">
         <div>
-          <h2 id="docs-title">Documents &amp; bills</h2>
-          <p className="muted">Documents are processed in this browser tab. Clear the session when finished. Requested downloads stay on your device.</p>
+          <h2 id="docs-title">Bills &amp; documents</h2>
           {features && (
             <p className={`engine-badge ${features.engine === "typellm" ? "ai" : ""}`}>
               {features.engine === "typellm"
-                ? <>Reading with AI · TypeLLM{features.model ? ` (${features.model})` : ""}, self-hosted{features.vision ? ", sees photos" : ""}</>
-                : <>Reading on your device · review extracted details{features.typellm_error ? " · AI engine unavailable" : ""}</>}
+                ? <>Reads with AI (self-hosted){features.vision ? " · sees photos" : ""}</>
+                : <>Reads on this device{features.typellm_error ? " · AI unavailable" : ""}</>}
             </p>
           )}
         </div>
@@ -93,15 +92,15 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
 
       <div className="docs-body">
         <div className="dropzone small" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(e.dataTransfer.files); }}>
-          <span className="dropzone-title">Add bills, reports, discharge summary, cheque, ID…</span>
-          <span className="dropzone-sub">Photos or PDFs · {features?.ocr ? "bills are read automatically" : "automatic reading unavailable"}</span>
+          <span className="dropzone-title">Add bills and documents</span>
+          <span className="dropzone-sub">Photos or PDFs{features?.ocr ? "" : " · enter amounts by hand"}</span>
           <input className="file-picker" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" aria-label="Choose supporting documents" disabled={!!busy}
             onChange={(e) => { const files = Array.from(e.currentTarget.files || []); if (!files.length) return; e.currentTarget.value = ""; add(files); }} />
         </div>
 
         {window.__FORMFILL_DEMO__ && docs.length === 0 && (
           <button className="btn sample-btn" onClick={() => add(window.__FORMFILL_DEMO__.sampleFiles())}>
-            Try with 3 sample documents (a pharmacy bill photo, a lab bill, a lab report)
+            Try 3 sample documents
           </button>
         )}
 
@@ -125,11 +124,11 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
                     {d.error && <small className="error">{d.error}</small>}
                     {d.note && <small className="muted">{d.note}</small>}
                     {d.bill?.review?.length > 0 && (
-                      <small className="warn">Check {d.bill.review.map((k) => ({ bill_no: "bill no.", date: "date", amount: "amount" }[k])).join(", ")}: automatic reading needs review</small>
+                      <small className="warn">Check {d.bill.review.map((k) => ({ bill_no: "bill no.", date: "date", amount: "amount" }[k])).join(", ")}</small>
                     )}
-                    {["not_found", "unknown"].includes(d.names?.status) && <small className="error">Patient name could not be fully matched. Check this document before submission.</small>}
+                    {["not_found", "unknown"].includes(d.names?.status) && <small className="error">Patient name not matched. Check this file.</small>}
                     {d.names?.status === "variant" && (
-                      <small className="warn">Name spelled {d.names.variants.map((v) => `“${v.found}”`).join(", ")} (form: {d.names.variants.map((v) => v.expected).join(", ")})</small>
+                      <small className="warn">Name reads {d.names.variants.map((v) => `“${v.found}”`).join(", ")}, form says {d.names.variants.map((v) => v.expected).join(", ")}</small>
                     )}
                   </td>
                   <td>
@@ -144,33 +143,33 @@ export default function Documents({ formId, tpl, values, effective, setValues, o
                       <td><input aria-label="Amount" className={`${d.bill?.review?.includes("amount") ? "needs-review" : ""} num`} inputMode="numeric" value={d.bill?.amount ?? ""} onChange={(e) => setBill(d.id, { amount: e.target.value })} /></td>
                       <td><input aria-label="Issued by" value={d.bill?.issuer || ""} onChange={(e) => setBill(d.id, { issuer: e.target.value })} /></td>
                     </>
-                  ) : <td colSpan={4} className="muted">Not a bill: included in the claim pack as a document</td>}
+                  ) : <td colSpan={4} className="muted">Goes in the pack as is</td>}
                   <td><button className="btn ghost" aria-label={`Remove ${d.file.name}`} onClick={() => setDocs((x) => x.filter((y) => y.id !== d.id))}>✕</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {invalidAmounts && <p className="error" role="alert">Enter positive whole-rupee amounts only. Decimals and separators are not accepted; confirm any rounding against the bill before adding it.</p>}
-        {bills.length > 0 && <p className="muted small-note">Check each bill against the paper copy. Handwritten amounts are often misread.</p>}
+        {invalidAmounts && <p className="error" role="alert">Whole rupees only, like 1250.</p>}
+        {bills.length > 0 && <p className="muted small-note">Check amounts against the paper bills.</p>}
         {msg && <p className={msg.err ? "error" : "ok"} role={msg.err ? "alert" : "status"}>{msg.err || msg.ok}</p>}
         {report && (
           <div className="pack-report" role="status">
             <strong>Claim pack downloaded · {report.pages} pages</strong>
-            {report.missing?.length ? <p className="warn">Not included: {report.missing.join(", ")}</p> : <p className="ok">All required documents included.</p>}
-            {report.name_unverified?.map((v, i) => <p key={`unverified-${i}`} className="error">Patient name not verified: {v.file}. Review before submission.</p>)}
+            {report.missing?.length ? <p className="warn">Missing: {report.missing.join(", ")}</p> : <p className="ok">All required documents included.</p>}
+            {report.name_unverified?.map((v, i) => <p key={`unverified-${i}`} className="error">Check patient name: {v.file}.</p>)}
             {report.name_variants?.map((v) => (
-              <p key={v.file} className="warn">Name spelling differs in {v.file}: {v.variants.map((x) => `${x.found} (form: ${x.expected})`).join(", ")}. Ask the hospital to correct and stamp it.</p>
+              <p key={v.file} className="warn">Name differs in {v.file}: {v.variants.map((x) => `${x.found} (form: ${x.expected})`).join(", ")}. Ask the hospital to correct it.</p>
             ))}
           </div>
         )}
       </div>
 
       <footer className="docs-foot">
-        {table && <button className="btn" onClick={addBills} disabled={!bills.length || invalidAmounts}>Add {bills.length || ""} bill{bills.length === 1 ? "" : "s"} to the form</button>}
+        {table && <button className="btn" onClick={addBills} disabled={!bills.length || invalidAmounts}>Add {bills.length || ""} bill{bills.length === 1 ? "" : "s"} to form</button>}
         <span className="spacer" />
         <button className="btn primary" onClick={buildPack} disabled={busy === "pack" || docs.some((d) => d.busy)}>
-          {busy === "pack" ? "Building…" : "Download claim pack (one PDF)"}
+          {busy === "pack" ? "Building…" : "Download claim pack"}
         </button>
       </footer>
     </dialog>

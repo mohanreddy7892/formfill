@@ -14,7 +14,7 @@ The application processes personal data temporarily in memory and does not persi
 ## Privacy behavior
 
 - Uploaded forms and edited layouts are private to a random temporary browser session.
-- Sessions expire after 15 minutes. **Clear session** removes the current session and entered browser state.
+- Sessions expire after 40 minutes. **Clear session** removes the current session and entered browser state.
 - No saved form library, personal-values export, database, document volume or cloud bucket.
 - No browser localStorage/sessionStorage for form data or tokens. Responses are not cacheable.
 - Bill OCR uses local Tesseract; external AI document processing is disabled.

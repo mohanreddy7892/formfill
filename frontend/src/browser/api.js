@@ -11,7 +11,7 @@ import {categories,parseDocument} from './documents.js';
 import seed from './medi-assist.json';
 
 pdfjs.GlobalWorkerOptions.workerSrc=pdfWorker;
-const MB=1024*1024,TTL=15*60*1000;
+const MB=1024*1024,TTL=40*60*1000;
 let generation=0,expires=Date.now()+TTL,busy=false,abort=new AbortController(),imageTail=Promise.resolve();
 const forms=new Map(),urls=new Map(),tasks=new Set(),ocrWorkers=new Set();
 const clone=x=>structuredClone(x);

@@ -6,7 +6,7 @@ Choose a blank PDF, use detected native fields or map printed fields, enter valu
 
 ## Temporary session
 
-Documents, entered values, layouts and page previews remain in RAM. Clear session empties the form map, revokes preview URLs, cancels pending operations and destroys active OCR/PDF workers. The absolute session expires after 15 minutes; expiration is checked before operations and when returning to the tab. Browser suspension can delay timers. Reloading starts an empty session. The app does not use localStorage, sessionStorage, IndexedDB, service workers or document caches. OCR's language cache is explicitly disabled.
+Documents, entered values, layouts and page previews remain in RAM. Clear session empties the form map, revokes preview URLs, cancels pending operations and destroys active OCR/PDF workers. The absolute session expires after 40 minutes; expiration is checked before operations and when returning to the tab. Browser suspension can delay timers. Reloading starts an empty session. The app does not use localStorage, sessionStorage, IndexedDB, service workers or document caches. OCR's language cache is explicitly disabled.
 
 Explicit PDF downloads are saved by the user's browser. FormFill cannot delete those downloads, browser/OS history, swap, backups or copies made outside the app, and cannot promise secure physical RAM erasure. Static app assets may be cached; they contain no chosen documents or entered values. Hosting authentication and access logs are managed by Sites and do not receive document payloads from this app.
 

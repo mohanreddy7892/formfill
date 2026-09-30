@@ -12,7 +12,7 @@ Processing necessarily uses temporary RAM. This is not a claim of secure memory 
 
 | Data | Lifetime |
 | --- | --- |
-| Uploaded form and edited layout | Browser-session-scoped server RAM; absolute 15-minute expiry from first upload. Clear session deletes the session immediately. |
+| Uploaded form and edited layout | Browser-session-scoped server RAM; absolute 40-minute expiry from first upload. Clear session deletes the session immediately. |
 | Bills, OCR text and submitted values | Request-local memory during processing; no persistent document cache. |
 | Page previews | Browser memory only; object URLs are revoked on Clear session. No server render cache. |
 | Browser field values and selected files | React memory; cleared by remounting on Clear session or expiry. No localStorage, sessionStorage, IndexedDB, or values JSON export. |

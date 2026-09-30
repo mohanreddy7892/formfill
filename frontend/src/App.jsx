@@ -72,7 +72,7 @@ export default function App() {
           <Clock width={16} height={16} />{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}
         </span>
         <Menu label="Session menu">
-          <p className="menu-note"><Lock width={16} height={16} />Stays in this tab. Clears after 15 minutes.</p>
+          <p className="menu-note"><Lock width={16} height={16} />Stays in this tab. Clears after 40 minutes.</p>
           <button type="button" role="menuitem" onClick={clear}>Clear session now</button>
         </Menu>
       </header>

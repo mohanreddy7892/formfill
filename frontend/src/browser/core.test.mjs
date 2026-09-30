@@ -84,6 +84,20 @@ test('tall answer columns split at colon markers',async()=>{
   assert.ok(fields[0].rect[3]<=fields[1].rect[1]);
   assert.ok(fields[0].rect[0]>23);
 });
+test('a split answer segment stops before a printed word instead of running into it',async()=>{
+  const {rasterBoxRuns,suggestedFields}=await import('./detect.js');
+  const width=400,height=400,data=new Uint8ClampedArray(width*height*4).fill(255);
+  const ink=(x,y)=>{const p=(y*width+x)*4;data[p]=data[p+1]=data[p+2]=0;};
+  for(let x=40;x<=300;x++){ink(x,20);ink(x,350);}
+  for(let y=20;y<=350;y++){ink(40,y);ink(300,y);}
+  for(const y of [40,160]){for(const dy of [0,5])for(let x=45;x<=46;x++)for(let z=y+dy;z<=y+dy+1;z++)ink(x,z);}
+  // A printed hint ("Yes/No"-style word) sits well inside the detected box's raw width,
+  // as happens when the scanned border is picked up a touch wider than the true blank.
+  const words=[{text:'Yes',x:80,y:18,width:15,height:8}];
+  const fields=suggestedFields(rasterBoxRuns({width,height,data},2,2,words),0);
+  assert.equal(fields.length,2);
+  assert.ok(fields[0].rect[2]<80,`expected the box to stop before the printed word, got right edge ${fields[0].rect[2]}`);
+});
 test('dotted answer runs become text fields, isolated punctuation does not',async()=>{
   const {dottedAreas}=await import('./detect.js');
   const marks=Array.from({length:12},(_,i)=>[20+i*2,30,20+i*2+.5,30.5]);

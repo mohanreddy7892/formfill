@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import PageCanvas from "./PageCanvas.jsx";
 import ValueLayer from "./ValueLayer.jsx";
 import Documents from "./Documents.jsx";
+import QuickReview from "./QuickReview.jsx";
 import { ArrowDown, Back, Check, Download, Files } from "./Icons.jsx";
 import { dateRuns, download, groupBy, isEmpty } from "../util.js";
 
@@ -16,6 +17,7 @@ export default function FillForm({ formId, go, onClear }) {
   const [computed, setComputed] = useState({});
   const [issues, setIssues] = useState([]);
   const [showDocs, setShowDocs] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const [view, setView] = useState("fields");
   const [openGroups, setOpenGroups] = useState(null);   // Set of group names; null = first group only
   const [done, setDone] = useState(false);
@@ -78,11 +80,14 @@ export default function FillForm({ formId, go, onClear }) {
     const rotated = [...order.slice(from + 1), ...order.slice(0, from + 1)];
     const hit = rotated.find(({ f }) => !isFilled(f) && !autoIds.has(f.id));
     if (!hit) return;
+    reveal(hit.f, hit.g);
+  };
+  const reveal = (f, g = f.group || "General") => {
     setView("fields");
-    setOpenGroups((cur) => new Set([...(cur ?? (groupList[0] ? [groupList[0][0]] : [])), hit.g]));
-    focus(hit.f);
+    setOpenGroups((cur) => new Set([...(cur ?? (groupList[0] ? [groupList[0][0]] : [])), g]));
+    focus(f);
     setTimeout(() => {
-      const el = document.getElementById(`f-${hit.f.id}`) || document.querySelector(`#f-${hit.f.id}-l`)?.closest(".field")?.querySelector("button, input");
+      const el = document.getElementById(`f-${f.id}`) || document.querySelector(`#f-${f.id}-l`)?.closest(".field")?.querySelector("button, input");
       el?.focus({ preventScroll: true });
       el?.closest(".field")?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 80);
@@ -165,10 +170,17 @@ export default function FillForm({ formId, go, onClear }) {
       <div className="actionbar">
         <button className="btn icon-only" onClick={() => setShowDocs(true)} aria-label="Bills and documents"><Files width={20} height={20} /></button>
         {view === "fields" && remaining > 0 && <button className="btn" onClick={nextEmpty} aria-label="Go to next empty field"><ArrowDown width={18} height={18} />Next</button>}
+        {filled > 0 && <button className="btn" onClick={() => setShowReview(true)} aria-label="Quick review of filled fields"><Check width={18} height={18} />Review</button>}
         <button className="btn primary" onClick={generate} disabled={busy || !filled || errors.length > 0}
           title={errors.length ? "Fix the items under Checks first" : undefined}><Download width={18} height={18} />{busy ? "Filling…" : "Download PDF"}</button>
       </div>
       {done && <DoneSheet name={tpl.name} onEdit={() => setDone(false)} onNext={() => go("library")} onClear={onClear} />}
+      {showReview && (
+        <QuickReview formId={formId} tpl={tpl} effective={effective} autoIds={autoIds} unfilled={remaining} errorCount={errors.length} busy={busy}
+          onClose={() => setShowReview(false)}
+          onEdit={(f) => { setShowReview(false); reveal(f); }}
+          onDownload={async () => { setShowReview(false); await generate(); }} />
+      )}
       {showDocs && <Documents formId={formId} tpl={tpl} values={values} effective={effective} setValues={setValues} onClose={() => setShowDocs(false)} />}
     </section>
   );

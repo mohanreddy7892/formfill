@@ -110,3 +110,35 @@ export function dateRuns(fields) {
   }
   return out;
 }
+
+/** Bounding box [x0, y0, x1, y1] of everything a field draws on the page. */
+export function fieldBounds(f) {
+  const rects = f.type === "boxes" ? f.boxes : f.type === "choice" ? (f.options || []).map((o) => o.rect) : [f.rect];
+  const r = rects.filter(Boolean);
+  if (!r.length) return null;
+  return [Math.min(...r.map((b) => b[0])), Math.min(...r.map((b) => b[1])), Math.max(...r.map((b) => b[2])), Math.max(...r.map((b) => b[3]))];
+}
+
+/** Fields with a value, in reading order (page, then top to bottom, then left to right). */
+export function reviewItems(fields, values) {
+  return fields
+    .map((f, i) => ({ f, i, b: fieldBounds(f) }))
+    .filter(({ f, b }) => b && !isEmpty(values[f.id]))
+    .sort((a, b) => a.f.page - b.f.page || a.b[1] - b.b[1] || a.b[0] - b.b[0] || a.i - b.i)
+    .map(({ f }) => f);
+}
+
+/** A viewBox [x, y, w, h] around bounds, padded and kept inside the page, at a steady aspect ratio. */
+export function cropBox(b, page) {
+  const w = Math.min(page.width, Math.max(240, b[2] - b[0] + 80));
+  const h = Math.min(page.height, Math.max(b[3] - b[1] + 40, w / 2.5));
+  const x = Math.min(Math.max(0, (b[0] + b[2]) / 2 - w / 2), page.width - w);
+  const y = Math.min(Math.max(0, (b[1] + b[3]) / 2 - h / 2), page.height - h);
+  return [x, y, w, h];
+}
+
+/** Human-readable form of a stored value for a field. */
+export function displayValue(f, v) {
+  if (f.type === "checkbox") return v === true || /^(1|true|yes|y|x|on)$/i.test(String(v)) ? "Ticked" : "Not ticked";
+  return Array.isArray(v) ? v.join(", ") : String(v ?? "");
+}

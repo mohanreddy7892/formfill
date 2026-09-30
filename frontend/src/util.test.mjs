@@ -96,3 +96,41 @@ test('bill placement refuses fractional amounts', () => {
   assert.deepEqual(r.updates, {});
   assert.equal(r.skipped.length, 1);
 });
+
+test("review lists only filled fields, in reading order", async () => {
+  const { reviewItems } = await import("./util.js");
+  const fields = [
+    { id: "b", page: 0, type: "text", rect: [10, 50, 60, 60] },
+    { id: "a", page: 0, type: "text", rect: [10, 20, 60, 30] },
+    { id: "empty", page: 0, type: "text", rect: [10, 5, 60, 15] },
+    { id: "c", page: 1, type: "text", rect: [10, 5, 60, 15] },
+    { id: "norect", page: 0, type: "text", rect: null },
+  ];
+  const ids = reviewItems(fields, { a: "X", b: "Y", c: "Z", norect: "Q", empty: "" }).map((f) => f.id);
+  assert.deepEqual(ids, ["a", "b", "c"]);
+});
+
+test("field bounds cover every box or option of a field", async () => {
+  const { fieldBounds } = await import("./util.js");
+  assert.deepEqual(fieldBounds({ type: "boxes", boxes: [[10, 10, 20, 20], [23, 12, 33, 22]] }), [10, 10, 33, 22]);
+  assert.deepEqual(fieldBounds({ type: "choice", options: [{ rect: [5, 5, 10, 10] }, { rect: [40, 5, 45, 10] }] }), [5, 5, 45, 10]);
+  assert.equal(fieldBounds({ type: "text", rect: null }), null);
+});
+
+test("review crop stays inside the page and around the field", async () => {
+  const { cropBox } = await import("./util.js");
+  const page = { width: 459, height: 792 };
+  for (const b of [[0, 0, 10, 10], [450, 785, 459, 792], [100, 300, 130, 312], [0, 0, 459, 792]]) {
+    const [x, y, w, h] = cropBox(b, page);
+    assert.ok(x >= 0 && y >= 0 && x + w <= page.width + 1e-9 && y + h <= page.height + 1e-9, `${b} -> ${[x, y, w, h]}`);
+    if (b[2] - b[0] < 200) assert.ok(x <= b[0] && x + w >= b[2] && y <= b[1] && y + h >= b[3]);
+  }
+});
+
+test("values display readably", async () => {
+  const { displayValue } = await import("./util.js");
+  assert.equal(displayValue({ type: "checkbox" }, true), "Ticked");
+  assert.equal(displayValue({ type: "checkbox" }, false), "Not ticked");
+  assert.equal(displayValue({ type: "choice" }, ["A", "B"]), "A, B");
+  assert.equal(displayValue({ type: "text" }, "HELLO"), "HELLO");
+});

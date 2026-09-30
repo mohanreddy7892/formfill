@@ -89,7 +89,7 @@ async function upload(file){return operation(async g=>{
     const tpl={form_id,name:matched?seed.name:(String(file?.name||'').replace(/\.pdf$/i,'').replace(/[_]+/g,' ').trim().slice(0,80)||'Temporary form'),version:1,review_layout:!matched&&fields.some(f=>f.id.startsWith('detected_')),pages,fields:matched?clone(seed.fields):fields,rules:matched?clone(seed.rules||[]):[],tables:matched?clone(seed.tables||[]):[],patient_name:matched?clone(seed.patient_name||[]):[]};
     return {tpl,detect:{pages:detected,acro:[]},matched};
   });
-  guard(g);forms.set(form_id,{bytes,...result});
+  guard(g);forms.set(form_id,{bytes,...result});expires=Date.now()+TTL;
   return {form_id,fields:result.tpl.fields.length,matched_seed:result.matched,review_layout:result.tpl.review_layout};
 });}
 

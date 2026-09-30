@@ -102,7 +102,14 @@ export function rasterBoxRuns(image,scaleX,scaleY,words=[]) {
     }
     const starts=[...new Set(colons.map(y=>Math.round(y)))].sort((a,b)=>a-b).filter((y,i,ys)=>!i||y-ys[i-1]>5);
     if(!starts.length)return [rect];
-    return starts.map((y,i)=>[rect[0]+7,Math.max(rect[1],y-3),rect[2],Math.min(rect[3],i+1<starts.length?starts[i+1]-3:rect[3])]).filter(r=>r[3]-r[1]>=5);
+    return starts.map((y,i)=>{
+      const left=rect[0]+7,top=Math.max(rect[1],y-3);
+      // The box border can be detected a touch wider than the true blank; never let a
+      // split segment run into a printed word (e.g. a "Yes/No" hint) on its own line.
+      const rightWords=words.filter(w=>w.text?.trim()&&w.x>left+5&&Math.abs(w.y-top)<8);
+      const right=Math.min(rect[2],...rightWords.map(w=>w.x-3));
+      return [left,top,right,Math.min(rect[3],i+1<starts.length?starts[i+1]-3:rect[3])];
+    }).filter(r=>r[3]-r[1]>=5&&r[2]-r[0]>=14);
   });
   const open=colonAnswerAreas(marks,width/scaleX,height/scaleY,words).filter(r=>!textAreas.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1])&&!boxes.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1]));
   const dotted=mergeDottedAreas(dottedAreas(marks),words).filter(r=>!areas.some(a=>r[0]<a[2]&&r[2]>a[0]&&r[1]<a[3]&&r[3]>a[1]));
